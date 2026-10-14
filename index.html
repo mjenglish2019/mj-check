@@ -246,7 +246,7 @@ function header(){
    기록(hist·오답·잠금·오늘 로그)은 서버에 학생별로 저장하고, 시험 결과는 끝날 때마다 '결과' 시트에 한 줄씩. */
 const API_URL="https://script.google.com/macros/s/AKfycbyDq-cFVcpcuFCO8oXUzmJp9qBM8v7X1EV7sPqGB9DkPCcfWd7rsgR1JxQwX7wweTO_/exec";
 /* API_ON=false인 동안은 주소 끝에 ?server=on 을 붙여 연 기기에서만 로그인 모드(원장님 확인용). ?server=off 로 끔 */
-const API_ON=false;
+const API_ON=true;
 (function(){try{const q=new URLSearchParams(location.search).get("server");if(q==="on")localStorage.setItem("mj_server","1");if(q==="off")localStorage.removeItem("mj_server")}catch(e){}})();
 function useApi(){if(!API_URL)return false;if(API_ON)return true;try{return localStorage.getItem("mj_server")==="1"}catch(e){return false}}
 function ymd(d){d=d||new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
@@ -325,7 +325,7 @@ async function doLogin(){
 function vLogin(){
   const ids=lsGet("mj_ids",[]);
   return header()+`<div class="stack"><h1>오늘 공부한 걸 <span class="mark">확인</span>해 볼까요?</h1>
-  <p class="muted">원장님께 받은 아이디와 비밀번호로 들어와요.</p></div>
+  <p class="muted">아이디는 <b>내 이름</b>, 비밀번호는 <b>내 휴대폰 뒷번호 4자리</b>예요.</p></div>
   <div class="panel">
     <label class="lbl" for="lid">아이디</label>
     <input type="text" id="lid" autocomplete="username" autocapitalize="off" spellcheck="false" value="${esc(S.loginId||"")}">
@@ -490,7 +490,7 @@ function vHome(){
   }
   const tn=todayGroups().length;
   return header()+`<button class="todaybtn" data-act="today"><span>오늘 본 시험</span><span class="badge ${tn?"ok":"none"}">${tn}개 단원</span></button>
-  ${useApi()?"":`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button>`;
+  ${useApi()?`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 공부가 다 끝나면 부모님께 카톡을 보냅니다.</b><br>오늘 본 시험 → 부모님께 카톡으로 보내기</p>`:`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button>`;
 }
 
 function vVocabMenu(){
