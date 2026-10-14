@@ -244,8 +244,11 @@ function header(){
 /* ---------- 로그인 · 서버 저장 (2026-10-14) ----------
    API_URL = 원장님 구글 시트 웹 앱 주소. 비어 있으면 예전처럼 이름만 쓰고 기기에만 저장.
    기록(hist·오답·잠금·오늘 로그)은 서버에 학생별로 저장하고, 시험 결과는 끝날 때마다 '결과' 시트에 한 줄씩. */
-const API_URL="";
-function useApi(){return !!API_URL}
+const API_URL="https://script.google.com/macros/s/AKfycbyDq-cFVcpcuFCO8oXUzmJp9qBM8v7X1EV7sPqGB9DkPCcfWd7rsgR1JxQwX7wweTO_/exec";
+/* API_ON=false인 동안은 주소 끝에 ?server=on 을 붙여 연 기기에서만 로그인 모드(원장님 확인용). ?server=off 로 끔 */
+const API_ON=false;
+(function(){try{const q=new URLSearchParams(location.search).get("server");if(q==="on")localStorage.setItem("mj_server","1");if(q==="off")localStorage.removeItem("mj_server")}catch(e){}})();
+function useApi(){if(!API_URL)return false;if(API_ON)return true;try{return localStorage.getItem("mj_server")==="1"}catch(e){return false}}
 function ymd(d){d=d||new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function outbox(){return S.me?lsGet(stuKey("outbox"),[]):[]}
 function collectState(){return {v:1,day:ymd(),hist:hist(),wrong:wrongBook(),wrongAt:lsGet(stuKey("wrongAt"),0),sel:lsGet(stuKey("sel"),{}),selAt:lsGet(stuKey("selAt"),0),
