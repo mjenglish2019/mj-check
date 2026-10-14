@@ -174,9 +174,10 @@ function setLock(k,v){const m=lockMap();if(v===null)delete m[k];else m[k]=v;lsSe
 function todayLog(){return lsGet(stuKey("log_"+dayKey()),[])}
 function hm(iso){const d=new Date(iso);return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
 /* group today's attempts by book+unit: first score, last score, tries */
-function todayGroups(){
+function todayGroups(){return groupLog(todayLog())}
+function groupLog(log){
   const g=new Map();
-  todayLog().forEach(r=>{const k=r.type+"|"+r.bookName+"|"+r.unitName;
+  (log||[]).forEach(r=>{const k=r.type+"|"+r.bookName+"|"+r.unitName;
     if(!g.has(k))g.set(k,{type:r.type,bookName:r.bookName,unitName:r.unitName,tries:[]});g.get(k).tries.push(r)});
   return [...g.values()].map(x=>{const f=x.tries[0],l=x.tries[x.tries.length-1];
     return Object.assign(x,{first:f,last:l,passed:x.tries.some(t=>t.pass),final:!x.tries.some(t=>t.pass)&&x.tries.some(t=>t.final),start:f.at,end:l.at,
@@ -420,6 +421,44 @@ function todayText(){
   lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험(3회)으로 다시 확인합니다.");
   return lines.join("\n");
 }
+/* 최근 7일 기록 (2026-10-14): 이 기기에 남은 날짜별 기록 + 서버에서 받은 단원별 기록(hist)으로 채움 */
+const WD="일월화수목금토";
+function md(d){return `${d.getMonth()+1}/${d.getDate()}`}
+function weekGroups(n){
+  n=n||7;const now=new Date(),days=[],seen=new Set();
+  for(let i=n-1;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i);
+    const gs=groupLog(lsGet(stuKey("log_"+dayKey(d)),[]));
+    gs.forEach(x=>seen.add(dayKey(d)+"|"+x.type+"|"+x.bookName+"|"+x.unitName));days.push({d,gs})}
+  const from=days[0].d;
+  Object.entries(hist()).forEach(([k,h])=>{if(!h||!h.at)return;const t=new Date(h.at);if(isNaN(t)||t<from)return;
+    const [bid,uid]=k.split("/"),b=(S.content&&S.content.books||[]).find(b=>b.id===bid);if(!b)return;
+    const u=(b.units||[]).find(u=>u.id===uid),unitName=u?u.name:uid,dk=dayKey(t);
+    if(seen.has(dk+"|"+b.type+"|"+b.name+"|"+unitName))return;
+    const day=days.find(x=>dayKey(x.d)===dk);if(!day)return;
+    day.gs.push({type:b.type,bookName:b.name,unitName,h,passed:!!h.pass,final:!h.pass&&!!h.final,start:h.at,away:0,awaySec:0})});
+  days.forEach(x=>x.gs.sort((a,b)=>a.start<b.start?-1:a.start>b.start?1:0));
+  return days;
+}
+function weekText(){
+  const days=weekGroups(7),studied=days.filter(x=>x.gs.length),all=studied.flatMap(x=>x.gs),today=dayKey();
+  const p=all.filter(x=>x.passed).length,f=all.filter(x=>!x.passed&&x.final).length,r=all.length-p-f;
+  const aw=all.reduce((a,x)=>a+(x.away||0),0),awS=all.reduce((a,x)=>a+(x.awaySec||0),0);
+  const lines=[`[엠제이영어학원] ${S.me.name} 학생 최근 7일 점검 결과 (${md(days[0].d)}~${md(days[6].d)})`,""];
+  if(!all.length)lines.push("최근 7일 동안 본 시험이 없어요.");
+  else{lines.push(`공부한 날 ${studied.length}일 / 7일 · ${all.length}단원 (통과 ${p}${f?` · 조교 확인 ${f}`:""}${r?` · 아직 통과 전 ${r}`:""})`);
+    if(aw)lines.push(`시험 중 ${awayTxt(aw,awS)}`);
+    studied.forEach(day=>{lines.push("",`▶ ${md(day.d)} (${WD[day.d.getDay()]})`);
+      day.gs.forEach(x=>{const st=x.passed?"통과":x.final?"조교 선생님과 다시 확인":dayKey(day.d)===today?"재시험 중":"재시험 미완료";
+        lines.push(`■ ${TYPES[x.type]||x.type} · ${x.bookName}${x.unitName?" "+x.unitName:""}`);
+        if(x.h)lines.push(`  첫 시험 ${x.h.pct}점${x.h.pass&&x.h.retryPassed?` → 재시험 ${x.h.retryPassed}회 만에`:""} · ${st}`);
+        else lines.push(`  ${x.tries.map(t=>t.pct).join(" → ")}점 (${x.tries.length}회) · ${st}${x.away?" · "+awayTxt(x.away,x.awaySec):""}`)})})}
+  lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험(3회)으로 다시 확인합니다.");
+  return lines.join("\n");
+}
+async function shareText(t){S.shareText=t;S.shareBox=false;
+  if(navigator.share){try{await navigator.share({text:t});return}catch(err){if(err&&err.name==="AbortError")return}}
+  try{await navigator.clipboard.writeText(t);toast("복사했어요. 카톡을 열어 부모님 대화방에 붙여 넣으세요")}
+  catch(err){S.shareBox=true;render();selectText("tb");toast("글을 길게 눌러 복사해 주세요")}}
 /* 원장님 제출: 구글 설문지(미리 채운 링크). 칸 번호는 설문지 '양식 미리 작성'에서 받은 값 */
 const FORM_URL="https://docs.google.com/forms/d/e/1FAIpQLSdzKXhMVzLhXL0j8aPPL3d80nA_jwR6BWjMjj2Abn1F3wlaEQ/viewform";
 const FORM_ENTRY={name:"1428942895",sum:"2117279542",detail:"1514061354"};
@@ -460,7 +499,9 @@ function vToday(){
     :`<p class="muted small" style="margin-top:-8px">누르면 바로 원장님께 가요. 새 창에 "응답이 기록되었습니다"가 뜨면 끝이에요. 오늘 공부를 다 끝낸 뒤 눌러요.</p>`})()}`
   :`<span class="linkbtn off" aria-disabled="true">원장님께 제출하기</span>`)}
   <button class="wide" data-act="sharetoday" ${gs.length?"":"disabled"}>부모님께 카톡으로 보내기</button>
-  ${S.shareBox?`<div class="panel"><p class="muted small">아래 글을 길게 눌러 복사한 뒤 카톡에 붙여 넣으세요.</p><div class="copybox" id="tb">${esc(todayText())}</div></div>`:""}
+  <button class="wide" data-act="shareweek">최근 7일 기록 부모님께 보내기</button>
+  <p class="muted small" style="margin-top:-8px">집에서 하루씩 공부하는 학생은 일주일에 한 번 이 버튼으로 모아서 보내도 돼요.</p>
+  ${S.shareBox?`<div class="panel"><p class="muted small">아래 글을 길게 눌러 복사한 뒤 카톡에 붙여 넣으세요.</p><div class="copybox" id="tb">${esc(S.shareText||todayText())}</div></div>`:""}
   <div class="note">${useApi()?"":"제출한 뒤 "}이 화면을 감독 선생님께 보여 주세요.</div>`;
 }
 function vHome(){
@@ -920,12 +961,9 @@ app.addEventListener("click",async e=>{
     case "home":goHome();break;
     case "review":if(v)openReview(v);break;
     case "a2hs":doInstall();break;
-    case "today":S.shareBox=false;S.view="today";render();window.scrollTo(0,0);break;
-    case "sharetoday":{const t=todayText();
-      if(navigator.share){try{await navigator.share({text:t});break}catch(err){if(err&&err.name==="AbortError")break}}
-      try{await navigator.clipboard.writeText(t);toast("복사했어요. 카톡을 열어 부모님 대화방에 붙여 넣으세요")}
-      catch(err){S.shareBox=true;render();selectText("tb");toast("글을 길게 눌러 복사해 주세요")}
-      break;}
+    case "today":S.shareBox=false;S.shareText="";S.view="today";render();window.scrollTo(0,0);break;
+    case "sharetoday":await shareText(todayText());break;
+    case "shareweek":await shareText(weekText());break;
     case "sent":lsSet(stuKey("sent_"+dayKey()),hm(new Date().toISOString()));setTimeout(()=>{if(S.view==="today")render()},300);break;
     case "copytoday":{const t=todayText();try{await navigator.clipboard.writeText(t);toast("복사했어요. 카톡에 붙여 넣으세요")}catch(err){selectText("tb");toast("글자를 길게 눌러 복사해 주세요")}break;}
     case "unit":{
