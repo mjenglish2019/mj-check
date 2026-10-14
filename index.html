@@ -48,7 +48,7 @@ p{margin:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .grow{flex:1 1 auto;min-width:0}
 label.lbl{font-size:13px;color:var(--muted);letter-spacing:.02em}
-input[type=text],select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:10px;padding:11px 12px}
+input[type=text],input[type=password],select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:10px;padding:11px 12px}
 textarea{min-height:150px;font-size:14px;line-height:1.5}
 input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 button{font:inherit;cursor:pointer;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);padding:11px 14px;min-height:46px}
@@ -235,12 +235,112 @@ function passOf(t){return (S.content.pass&&S.content.pass[t])||100}
 /* ---------- views ---------- */
 function header(){
   const who=S.me?`<span class="who">${esc(S.me.name)}</span>`:"";
-  const sw=S.me&&S.view==="home"&&knownNames().length>1?`<button class="ghost" data-act="logout">바꾸기</button>`:"";
+  const sw=S.me&&S.view==="home"&&(useApi()||knownNames().length>1)?`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"바꾸기"}</button>`:"";
   const adm=S.canEdit?`<button class="ghost" data-act="admin">원장 화면</button>`:"";
   const a2=(S.view!=="quiz"&&S.view!=="cards"&&!isApp())?`<button class="a2hs" data-act="a2hs" aria-expanded="${!!S.a2hs}">＋ 앱 설치</button>`:"";
   return `<div class="top"><div class="brand">엠제이 <b>점검실</b></div><div class="row">${who}${sw}${adm}${a2}</div></div>`+(S.a2hs&&a2?a2hsPanel():"");
 }
 
+/* ---------- 로그인 · 서버 저장 (2026-10-14) ----------
+   API_URL = 원장님 구글 시트 웹 앱 주소. 비어 있으면 예전처럼 이름만 쓰고 기기에만 저장.
+   기록(hist·오답·잠금·오늘 로그)은 서버에 학생별로 저장하고, 시험 결과는 끝날 때마다 '결과' 시트에 한 줄씩. */
+const API_URL="";
+function useApi(){return !!API_URL}
+function ymd(d){d=d||new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function outbox(){return S.me?lsGet(stuKey("outbox"),[]):[]}
+function collectState(){return {v:1,day:ymd(),hist:hist(),wrong:wrongBook(),wrongAt:lsGet(stuKey("wrongAt"),0),sel:lsGet(stuKey("sel"),{}),selAt:lsGet(stuKey("selAt"),0),
+  lock:lockMap(),log:todayLog(),sent:lsGet(stuKey("sent_"+dayKey()),null),updated:Date.now()}}
+function applyState(st){if(!st||!S.me)return;
+  lsSet(stuKey("hist"),st.hist||{});lsSet(stuKey("wrong"),st.wrong||[]);lsSet(stuKey("wrongAt"),st.wrongAt||0);
+  lsSet(stuKey("sel"),st.sel||{});lsSet(stuKey("selAt"),st.selAt||0);
+  if(st.day===ymd()){lsSet(stuKey("lock_"+dayKey()),st.lock||{});lsSet(stuKey("log_"+dayKey()),st.log||[]);if(st.sent)lsSet(stuKey("sent_"+dayKey()),st.sent)}}
+/* 서버 Code.gs의 mergeState와 똑같이 유지 */
+function mergeState(a,b){
+  a=a||{};b=b||{};
+  const day=[a.day||"",b.day||""].sort().pop();
+  const A=a.day===day?a:{},B=b.day===day?b:{};
+  const rank=l=>!l?-1:(l.state==="pass"||l.state==="final")?1e6:(l.retryNo||0)*2+(l.state==="open"?1:0);
+  const lock=Object.assign({},A.lock||{});
+  Object.keys(B.lock||{}).forEach(k=>{const x=lock[k],y=B.lock[k],rx=rank(x),ry=rank(y);
+    if(ry>rx)lock[k]=y;else if(ry===rx&&x)lock[k]=Object.assign({},y,{away:Math.max(x.away||0,y.away||0),awaySec:Math.max(x.awaySec||0,y.awaySec||0)})});
+  const seen={},log=[];(A.log||[]).concat(B.log||[]).forEach(e=>{if(e&&e.at&&!seen[e.at]){seen[e.at]=1;log.push(e)}});
+  log.sort((p,q)=>p.at<q.at?-1:p.at>q.at?1:0);
+  const hp=h=>!h?-1:h.pass?3:h.final?2:1;
+  const hist=Object.assign({},a.hist||{});
+  Object.keys(b.hist||{}).forEach(k=>{const hx=hist[k],hy=b.hist[k];if(!hx||hp(hy)>hp(hx)||(hp(hy)===hp(hx)&&(hy.at||"")>=(hx.at||"")))hist[k]=hy});
+  const wb=(b.wrongAt||0)>=(a.wrongAt||0)?b:a,sb=(b.selAt||0)>=(a.selAt||0)?b:a;
+  const rids=(a.rids||[]).concat(b.rids||[]).filter((x,i,arr)=>arr.indexOf(x)===i).slice(-400);
+  return {v:1,day,hist,wrong:wb.wrong||[],wrongAt:wb.wrongAt||0,sel:sb.sel||{},selAt:sb.selAt||0,lock,log,sent:[A.sent||"",B.sent||""].sort().pop()||null,rids,updated:Math.max(a.updated||0,b.updated||0)};
+}
+async function api(body){const c=new AbortController(),t=setTimeout(()=>c.abort(),30000);
+  try{const r=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body),signal:c.signal});return await r.json()}
+  finally{clearTimeout(t)}}
+S.sync={state:"idle",at:null};
+let syncing=false,syncAgain=false;
+async function sync(){
+  if(!useApi()||!S.me||!S.me.token)return;
+  if(syncing){syncAgain=true;return}
+  syncing=true;const me=S.me,box=outbox();S.sync=Object.assign({},S.sync,{state:"busy"});
+  try{
+    const res=await api({act:"push",id:me.id,token:me.token,state:collectState(),results:box});
+    if(S.me!==me)return;
+    if(!res||!res.ok){if(res&&res.code==="auth"){authFail();return}throw new Error(res&&res.code)}
+    applyState(mergeState(collectState(),res.state));
+    const done=new Set(box.map(r=>r.at));lsSet(stuKey("outbox"),outbox().filter(r=>!done.has(r.at)));
+    S.sync={state:"ok",at:new Date().toISOString()};
+  }catch(e){S.sync={state:"fail",at:S.sync.at}}
+  finally{syncing=false;
+    if(S.me&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="start"&&S.view!=="admin")render();
+    if(syncAgain){syncAgain=false;setTimeout(sync,400)}}
+}
+function authFail(){try{localStorage.removeItem("mj_me")}catch(e){}
+  S.me=null;S.quiz=null;S.result=null;S.view="start";S.loginMsg="비밀번호가 바뀌었어요. 다시 들어와 주세요.";render()}
+/* 예전에 이름만 쓰던 기록(띄어쓰기만 다른 이름 포함)을 로그인 이름으로 옮김 */
+function migrateName(to){
+  const from=knownNames().find(n=>n!==to&&nameKey(n)===nameKey(to));if(!from)return;
+  try{const ks=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i)||"";if(k.startsWith("mj_")&&k.endsWith("_"+from))ks.push(k)}
+    ks.forEach(k=>{const nk=k.slice(0,k.length-from.length)+to;if(localStorage.getItem(nk)==null)localStorage.setItem(nk,localStorage.getItem(k))})}catch(e){}
+  hideName(from)}
+async function doLogin(){
+  const id=((document.getElementById("lid")||{}).value||"").trim(),pw=((document.getElementById("lpw")||{}).value||"").trim();
+  S.loginId=id;
+  if(!id||!pw){S.loginMsg="아이디와 비밀번호를 써 주세요.";render();return}
+  S.loginBusy=true;S.loginMsg="";render();
+  try{
+    const res=await api({act:"login",id,pw});
+    if(!res||!res.ok){S.loginMsg=res&&res.code==="locked"?"비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 해 주세요."
+      :res&&res.code==="badlogin"?"아이디나 비밀번호가 맞지 않아요.":"잠시 뒤 다시 해 주세요.";return}
+    migrateName(res.name);
+    S.me={name:res.name,id:res.id,token:res.token};lsSet("mj_me",S.me);rememberName(res.name);
+    lsSet("mj_ids",[res.id].concat(lsGet("mj_ids",[]).filter(x=>x!==res.id)).slice(0,8));
+    applyState(mergeState(collectState(),res.state));
+    S.sel=lsGet(stuKey("sel"),{});S.tab="vocab";S.view="home";S.loginMsg="";
+    sync();
+  }catch(e){S.loginMsg="인터넷 연결을 확인해 주세요."}
+  finally{S.loginBusy=false;render();window.scrollTo(0,0)}
+}
+function vLogin(){
+  const ids=lsGet("mj_ids",[]);
+  return header()+`<div class="stack"><h1>오늘 공부한 걸 <span class="mark">확인</span>해 볼까요?</h1>
+  <p class="muted">원장님께 받은 아이디와 비밀번호로 들어와요.</p></div>
+  <div class="panel">
+    <label class="lbl" for="lid">아이디</label>
+    <input type="text" id="lid" autocomplete="username" autocapitalize="off" spellcheck="false" value="${esc(S.loginId||"")}">
+    ${ids.length?`<div class="chips">${ids.map((x,i)=>`<button class="chip" data-act="pickid" data-v="${i}">${esc(x)}</button>`).join("")}</div>`:""}
+    <label class="lbl" for="lpw">비밀번호</label>
+    <input type="password" id="lpw" autocomplete="current-password">
+    ${S.loginMsg?`<p class="small" style="color:var(--bad)"><b>${esc(S.loginMsg)}</b></p>`:""}
+    <button class="primary wide" data-act="login" ${S.loginBusy?"disabled":""}>${S.loginBusy?"확인하는 중…":"들어가기"}</button>
+    <p class="muted small">비밀번호를 잊었으면 원장님이나 조교 선생님께 물어봐요.</p>
+  </div>`;
+}
+function syncNote(){const n=outbox().length,st=S.sync||{};
+  return n?`<div class="note" style="background:var(--pend-bg);color:var(--pend)"><b>⏳ 아직 원장님께 안 간 결과 ${n}개</b><br>인터넷에 연결되면 자동으로 보내요.${st.state==="busy"?" (보내는 중…)":""}</div>
+    <button class="wide" data-act="syncnow">지금 다시 보내기</button>`
+  :`<div class="note" style="background:var(--ok-bg);color:var(--ok)"><b>✓ 시험 결과는 끝날 때마다 원장님께 자동으로 기록돼요.</b>${st.at?`<br>마지막 저장 ${hm(st.at)}`:""}</div>`}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&S.view!=="quiz")sync()});
+window.addEventListener("online",()=>sync());
+setInterval(()=>{if(useApi()&&S.me&&outbox().length&&!syncing)sync()},60000);
 /* 앱 설치 (2026-10-13 앱 버전): 안드로이드 크롬은 설치 창을 바로 띄우고, 나머지는 순서 안내 */
 let installEvt=null;
 function isApp(){try{return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}catch(e){return false}}
@@ -273,7 +373,7 @@ function a2hsPanel(){const e=envInfo();
     <p class="small">설치하면 홈 화면에 <b>MJ 점검실</b> 아이콘이 생겨요. 매번 링크를 찾지 않아도 되고, <b>기록도 안전하게 남아요.</b></p>
     ${out||`<p class="small muted">${A2HS_NAME[e.br]}에서 이렇게 해요</p>${stepList(e.br)}`}
     <details class="small"><summary class="muted">다른 휴대폰·브라우저라면</summary><div class="stack" style="margin-top:8px">${(e.app?Object.keys(A2HS_STEPS):others).map(k=>`<div><b>${A2HS_NAME[k]}</b>${stepList(k)}</div>`).join("")}</div></details>
-    <p class="small muted">설치한 뒤에는 홈 화면의 <b>MJ 점검실</b> 아이콘으로 들어와요.${e.ios?" 아이폰은 아이콘으로 처음 들어갈 때 이름을 한 번 다시 써요.":""}</p>
+    <p class="small muted">설치한 뒤에는 홈 화면의 <b>MJ 점검실</b> 아이콘으로 들어와요.${e.ios?(useApi()?" 아이폰은 아이콘으로 처음 들어갈 때 한 번 더 로그인해요.":" 아이폰은 아이콘으로 처음 들어갈 때 이름을 한 번 다시 써요."):""}</p>
   </div>`}
 function vStart(){
   const names=knownNames();S.nameList=names;
@@ -352,13 +452,13 @@ function vToday(){
       ${rk?`<div class="small" style="color:var(--pend)"><b>눌러서 틀린 문제·해설 보기 ›</b></div>`:""}</div>
       <span class="badge ${x.passed?"ok":x.final?"pend":"bad"}">${x.passed?"통과":x.final?"조교 확인":"재시험 중"}</span></${rk?"button":"div"}>`}).join("")}</div>`
   :`<div class="panel"><div class="empty">오늘 본 시험이 아직 없어요.</div></div>`}
-  ${gs.length?`<a class="linkbtn" href="${esc(submitUrl())}" target="_blank" rel="noopener" data-act="sent">원장님께 제출하기</a>
+  ${useApi()?syncNote():(gs.length?`<a class="linkbtn" href="${esc(submitUrl())}" target="_blank" rel="noopener" data-act="sent">원장님께 제출하기</a>
   ${(()=>{const t=lsGet(stuKey("sent_"+dayKey()),null);return t?`<p class="small ok-t" style="margin-top:-8px"><b>✓ 오늘 ${esc(t)}에 제출했어요.</b> 공부를 더 했으면 한 번 더 눌러요.</p>`
     :`<p class="muted small" style="margin-top:-8px">누르면 바로 원장님께 가요. 새 창에 "응답이 기록되었습니다"가 뜨면 끝이에요. 오늘 공부를 다 끝낸 뒤 눌러요.</p>`})()}`
-  :`<span class="linkbtn off" aria-disabled="true">원장님께 제출하기</span>`}
+  :`<span class="linkbtn off" aria-disabled="true">원장님께 제출하기</span>`)}
   <button class="wide" data-act="sharetoday" ${gs.length?"":"disabled"}>부모님께 카톡으로 보내기</button>
   ${S.shareBox?`<div class="panel"><p class="muted small">아래 글을 길게 눌러 복사한 뒤 카톡에 붙여 넣으세요.</p><div class="copybox" id="tb">${esc(todayText())}</div></div>`:""}
-  <div class="note">제출한 뒤 이 화면을 감독 선생님께 보여 주세요.</div>`;
+  <div class="note">${useApi()?"":"제출한 뒤 "}이 화면을 감독 선생님께 보여 주세요.</div>`;
 }
 function vHome(){
   const t=S.tab;
@@ -387,7 +487,7 @@ function vHome(){
   }
   const tn=todayGroups().length;
   return header()+`<button class="todaybtn" data-act="today"><span>오늘 본 시험</span><span class="badge ${tn?"ok":"none"}">${tn}개 단원</span></button>
-  <p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`+tabs+body+`<button class="ghost" data-act="logout">이름 바꾸기</button>`;
+  ${useApi()?"":`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button>`;
 }
 
 function vVocabMenu(){
@@ -499,6 +599,7 @@ function vResult(){
     <p class="muted">${esc(r.bookName)} · ${esc(r.unitName)}${r.retryNo?` · 재시험 ${r.retryNo}/${MAXRETRY}`:""}</p>
     <div class="row" style="align-items:flex-end;gap:14px"><span class="score">${r.pct}</span><span class="muted" style="padding-bottom:8px">점 (${r.correct}/${r.total})</span></div>
     <span class="verdict ${r.pass?"ok":(r.final||r.pending.length)?"pend":"bad"}">${r.pass?"통과":r.final?"조교 확인":r.pending.length?"확인 필요":"재시험"}</span>
+    ${useApi()?`<p class="small ${outbox().length?"muted":"ok-t"}">${outbox().length?"⏳ 원장님께 보내는 중…":"✓ 원장님께 기록됐어요"}</p>`:""}
     ${r.away?`<p class="small" style="color:var(--bad)"><b>⚠ 시험 중 ${awayTxt(r.away,r.awaySec)}</b> · 오늘 본 시험과 제출 내용에 남아요</p>`:""}
     ${r.pass?"":r.final?`<p class="small"><b>재시험 ${MAXRETRY}번을 모두 썼어요. 이 화면을 조교 선생님께 보여 주고 같이 풀어요.</b></p>`:`<p class="muted small">통과 기준은 ${r.passScore}점이에요. 재시험 기회 ${MAXRETRY-(r.retryNo||0)}번 남았어요.</p>`}
   </div>
@@ -622,6 +723,7 @@ function allVocabPool(){let p=[];Object.values(S.full).filter(b=>b.type==="vocab
 function launch(type,meta,items,retryNo){
   {const k=meta.bookId+"/"+meta.unitId,o=lockMap()[k],keep=o&&o.state==="started"&&(o.retryNo||0)===(retryNo||0);
     setLock(k,{state:"started",type,retryNo,items,meta,away:keep?o.away||0:0,awaySec:keep?o.awaySec||0:0})}
+  sync();
   if(type==="vocab"){startVocabTest(items,Object.assign({},meta,{retry:retryNo>0,retryNo}));return}
   S.quiz={type,items:items.map(x=>Object.assign({kind:"mc"},x)),i:0,correct:0,wrong:[],fb:null,title:meta.title,bookId:meta.bookId,bookName:meta.bookName,
     unitId:meta.unitId,unitName:meta.unitName,passage:meta.passage||"",retry:retryNo>0,retryNo};
@@ -687,9 +789,10 @@ function finish(){
     const rightSet=new Set(q.items.filter(it=>!q.wrong.includes(it)).map(it=>it.src.w));
     if(q.wrongMode)wb=wb.filter(x=>!rightSet.has(x.w));
     wrong.forEach(x=>{if(!wb.some(y=>y.w===x.w))wb.push({w:x.w,m:x.m})});
-    lsSet(stuKey("wrong"),wb);
+    lsSet(stuKey("wrong"),wb);lsSet(stuKey("wrongAt"),Date.now());
   }
-  {const lg=todayLog();lg.push({at:new Date().toISOString(),type:q.type,bookName:q.wrongMode?"오답 단어장":q.bookName,unitName:q.wrongMode?"":q.unitName,
+  const resAt=new Date().toISOString();
+  {const lg=todayLog();lg.push({at:resAt,type:q.type,bookName:q.wrongMode?"오답 단어장":q.bookName,unitName:q.wrongMode?"":q.unitName,
     pct,pass,correct:q.correct,total,retry:!!(q.retry||q.wrongMode),retryNo:q.retryNo||0,final:!pass&&(q.retryNo||0)>=MAXRETRY,wrong:q.type==="vocab"?wrong.map(x=>x.w).slice(0,40):[],pend:(q.pending||[]).length,away:q.away||0,awaySec:q.awaySec||0});
     lsSet(stuKey("log_"+dayKey()),lg)}
   const rn=q.retryNo||0,final=!pass&&rn>=MAXRETRY;
@@ -711,8 +814,11 @@ function finish(){
   lines.push(`${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`);
   S.result={type:q.type,retryNo:rn,final,pct,pass,passScore:ps,correct:q.correct,total,wrong,pending,retry:q.retry,wrongMode:q.wrongMode,
     bookName:q.wrongMode?"오답 단어장":q.bookName,unitName:q.wrongMode?"":q.unitName,text:lines.join("\n"),saved:null,quiz:q,away:q.away||0,awaySec:q.awaySec||0};
+  if(useApi()){const ob=outbox();ob.push({at:resAt,type:q.type,bookName:q.wrongMode?"오답 단어장":q.bookName,unitName:q.wrongMode?"":q.unitName,
+    pct,pass,final,correct:q.correct,total,retryNo:rn,wrong:q.type==="vocab"?wrong.map(x=>x.w).slice(0,60):[],wrongN:wrong.length,
+    away:q.away||0,awaySec:q.awaySec||0,pend:pending.map(p=>p.q+" → "+p.typed).slice(0,20)});lsSet(stuKey("outbox"),ob.slice(-200))}
   S.view="result";render();
-  saveResult(S.result);
+  saveResult(S.result);sync();
 }
 async function saveResult(r){
   if(!S.db)return;
@@ -730,7 +836,7 @@ function render(){
   let h="";
   if(!S.content){return}
   if(S.view==="admin")h=vAdmin();
-  else if(!S.me||S.view==="start")h=vStart();
+  else if(!S.me||S.view==="start")h=useApi()?vLogin():vStart();
   else if(S.view==="home")h=vHome();
   else if(S.view==="vmenu")h=vVocabMenu();
   else if(S.view==="cards")h=vCards();
@@ -764,6 +870,7 @@ app.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&e.target.id==="sp"){e.preventDefault();doSpell()}
   if(e.key==="Enter"&&e.target.id==="fl"){e.preventDefault();doFill()}
   if(e.key==="Enter"&&e.target.id==="nm"){e.preventDefault();enter()}
+  if(e.key==="Enter"&&(e.target.id==="lpw"||e.target.id==="lid")){e.preventDefault();if(e.target.id==="lid"){const p=document.getElementById("lpw");if(p)p.focus()}else doLogin()}
   if((e.key==="Enter"||e.key===" ")&&e.target.dataset&&e.target.dataset.act==="flip"){e.preventDefault();S.cards.flip=!S.cards.flip;render()}
 });
 function doSpell(){
@@ -799,7 +906,10 @@ app.addEventListener("click",async e=>{
   const act=el.dataset.act,v=el.dataset.v;
   switch(act){
     case "enter":enter();break;
-    case "logout":S.me=null;S.quiz=null;S.result=null;S.cards=null;S.nameEdit=false;S.view="start";render();window.scrollTo(0,0);break;
+    case "login":doLogin();break;
+    case "pickid":{const x=lsGet("mj_ids",[])[Number(v)];if(x){S.loginId=x;S.loginMsg="";render();const p=document.getElementById("lpw");if(p)p.focus()}break;}
+    case "syncnow":sync();break;
+    case "logout":if(useApi()){try{localStorage.removeItem("mj_me")}catch(err){}S.loginId="";S.loginMsg=""}S.me=null;S.quiz=null;S.result=null;S.cards=null;S.nameEdit=false;S.view="start";render();window.scrollTo(0,0);break;
     case "pickname":{const n=(S.nameList||[])[Number(v)];if(n)enter(n);break;}
     case "nameedit":S.nameEdit=!S.nameEdit;render();break;
     case "namehide":{const n=(S.nameList||[])[Number(v)];if(n){hideName(n);toast(`${n} 이름을 목록에서 뺐어요`)}if(!knownNames().length)S.nameEdit=false;render();break;}
@@ -816,7 +926,7 @@ app.addEventListener("click",async e=>{
     case "sent":lsSet(stuKey("sent_"+dayKey()),hm(new Date().toISOString()));setTimeout(()=>{if(S.view==="today")render()},300);break;
     case "copytoday":{const t=todayText();try{await navigator.clipboard.writeText(t);toast("복사했어요. 카톡에 붙여 넣으세요")}catch(err){selectText("tb");toast("글자를 길게 눌러 복사해 주세요")}break;}
     case "unit":{
-      lsSet(stuKey("sel"),S.sel);
+      lsSet(stuKey("sel"),S.sel);lsSet(stuKey("selAt"),Date.now());
       let b;try{if(!S.full[S.sel[S.tab]])toast("교재를 불러오는 중이에요");b=await loadBook(S.sel[S.tab])}catch(err){toast("교재를 불러오지 못했어요. 인터넷 연결을 확인해 주세요");return}
       const u=findUnit(b,v);if(!u||!u.items)return;S.sel.unit=v;
       if(S.tab==="vocab"){S.view="vmenu";render();window.scrollTo(0,0)}
@@ -921,9 +1031,11 @@ async function boot(){
   S.content.books=S.content.books||[];
   const me=lsGet("mj_me",null);
   /* 이 폰을 한 명만 쓰면 바로 들어가고, 여러 명이 쓴 폰이면 이름 목록부터 보여 줌 */
-  if(me&&me.name){if(!lsGet("mj_names",{})[me.name])rememberName(me.name);
+  if(useApi()){if(me&&me.name&&me.token){S.me=me;S.sel=lsGet(stuKey("sel"),{});S.view="home"}}
+  else if(me&&me.name){if(!lsGet("mj_names",{})[me.name])rememberName(me.name);
     if(knownNames().length<=1){S.me=me;S.sel=lsGet(stuKey("sel"),{});S.view="home"}}
   render();
+  if(useApi()&&S.me)sync();
   if(window.claude&&window.claude.use){
     window.claude.use("user").then(async u=>{if(!u)return;let ok=false;try{ok=await u.canEdit()}catch(e){}
       if(ok){S.canEdit=true;if(S.view!=="quiz"&&S.view!=="cards")render()}}).catch(()=>{});
