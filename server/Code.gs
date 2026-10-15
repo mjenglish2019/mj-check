@@ -201,6 +201,7 @@ function mergeState(a, b) {
     else if (ry === rx && x) {
       var m = {}, j; for (j in y) m[j] = y[j];
       m.away = Math.max(x.away || 0, y.away || 0); m.awaySec = Math.max(x.awaySec || 0, y.awaySec || 0);
+      m.quitAt = Math.max(x.quitAt || 0, y.quitAt || 0); m.qDone = Math.max(x.qDone || 0, y.qDone || 0);
       lock[k] = m;
     }
   }

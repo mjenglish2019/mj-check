@@ -266,7 +266,7 @@ function mergeState(a,b){
   const rank=l=>!l?-1:(l.state==="pass"||l.state==="final")?1e6:(l.retryNo||0)*2+(l.state==="open"?1:0);
   const lock=Object.assign({},A.lock||{});
   Object.keys(B.lock||{}).forEach(k=>{const x=lock[k],y=B.lock[k],rx=rank(x),ry=rank(y);
-    if(ry>rx)lock[k]=y;else if(ry===rx&&x)lock[k]=Object.assign({},y,{away:Math.max(x.away||0,y.away||0),awaySec:Math.max(x.awaySec||0,y.awaySec||0)})});
+    if(ry>rx)lock[k]=y;else if(ry===rx&&x)lock[k]=Object.assign({},y,{away:Math.max(x.away||0,y.away||0),awaySec:Math.max(x.awaySec||0,y.awaySec||0),quitAt:Math.max(x.quitAt||0,y.quitAt||0),qDone:Math.max(x.qDone||0,y.qDone||0)})});
   const seen={},log=[];(A.log||[]).concat(B.log||[]).forEach(e=>{if(e&&e.at&&!seen[e.at]){seen[e.at]=1;log.push(e)}});
   log.sort((p,q)=>p.at<q.at?-1:p.at>q.at?1:0);
   const hp=h=>!h?-1:h.pass?3:h.final?2:1;
@@ -766,7 +766,11 @@ function vocabItems(words,pool){
 function allVocabPool(){let p=[];Object.values(S.full).filter(b=>b.type==="vocab").forEach(b=>b.units.forEach(u=>p=p.concat(u.items||[])));return p}
 function launch(type,meta,items,retryNo){
   {const k=meta.bookId+"/"+meta.unitId,o=lockMap()[k],keep=o&&o.state==="started"&&(o.retryNo||0)===(retryNo||0);
-    setLock(k,{state:"started",type,retryNo,items,meta,away:keep?o.away||0:0,awaySec:keep?o.awaySec||0:0})}
+    let aw=keep?o.away||0:0,as=keep?o.awaySec||0:0;
+    /* 그만두기 → 같은 시험 이어 풀기: 그만둔 때부터 다시 시작한 때까지를 화면 이탈로 기록 (2026-10-15) */
+    const qa=keep?o.quitAt||0:0,pend=qa>(keep?o.qDone||0:0);
+    if(pend){const gap=Math.round((Date.now()-qa)/1000);if(gap>=1){aw+=1;as+=gap;setTimeout(()=>toast(`시험을 그만두었다가 이어서 풀었어요 (이탈 ${aw}회). 기록에 남아요`),300)}}
+    setLock(k,{state:"started",type,retryNo,items,meta,away:aw,awaySec:as,quitAt:qa,qDone:qa})}
   sync();
   if(type==="vocab"){startVocabTest(items,Object.assign({},meta,{retry:retryNo>0,retryNo}));return}
   S.quiz={type,items:items.map(x=>Object.assign({kind:"mc"},x)),i:0,correct:0,wrong:[],fb:null,title:meta.title,bookId:meta.bookId,bookName:meta.bookName,
@@ -995,7 +999,7 @@ app.addEventListener("click",async e=>{
       if(!val.trim()){toast("문장을 써 주세요");return}q.typed=val.trim();
       const ok=it.answers.some(a=>normSent(a)===normSent(val));answer(ok,it.model,null,!ok);break;}
     case "next":next();break;
-    case "quit":S.quiz=null;S.view=S.tab==="vocab"&&S.sel.unit?"vmenu":"home";render();break;
+    case "quit":{const qk=awayKey(S.quiz);if(qk){const lm=lockMap();if(lm[qk]&&lm[qk].state==="started"){setLock(qk,Object.assign({},lm[qk],{quitAt:Date.now()}));sync()}}}S.quiz=null;S.view=S.tab==="vocab"&&S.sel.unit?"vmenu":"home";render();break;
     case "retry":{const r=S.result,q=r.quiz;if((q.retryNo||0)>=MAXRETRY)return;
       if(!q.wrongMode){const meta={title:q.title,bookId:q.bookId,bookName:q.bookName,unitId:q.unitId,unitName:q.unitName,passage:q.passage||"",unitItems:q.unitItems};
         const items=r.type==="vocab"?r.wrong.map(x=>({w:x.w,m:x.m})):q.wrong.map(carry);
