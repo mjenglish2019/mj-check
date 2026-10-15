@@ -195,7 +195,7 @@ const PICK_BY={grammar:20,reading:10};
 function pickOf(t){return PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-15b";
+const BUILD="2026-10-15c";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -481,6 +481,11 @@ function submitUrl(){
   /* viewform 대신 formResponse로 보내 설문지 화면 없이 바로 제출(학생이 내용 수정 불가) */
   return FORM_URL.replace(/viewform$/,"formResponse")+"?usp=pp_url&entry."+FORM_ENTRY.name+"="+e(S.me.name)+"&entry."+FORM_ENTRY.sum+"="+e(t.sum)+"&entry."+FORM_ENTRY.detail+"="+e(t.detail)+"&submit=Submit";
 }
+/* 마지막 시험 끝난 뒤 지난 시간 (2026-10-15 원장님 요청): 5분 넘으면 빨간색 — 시험 끝나고 폰 안 내고 딴짓하는 것 감독용 */
+const LATE_MIN=5;
+function sinceLast(gs){if(!gs.length)return "";const end=gs.reduce((m,x)=>x.end>m?x.end:m,"");const min=Math.max(0,Math.floor((Date.now()-new Date(end).getTime())/60000));
+  const late=min>=LATE_MIN;return `<p class="small" id="since" style="margin-top:6px;font-weight:700;color:${late?"var(--bad)":"var(--ok)"}">마지막 시험 ${hm(end)}에 끝 · 끝난 지 ${min<60?min+"분":Math.floor(min/60)+"시간 "+(min%60)+"분"}${late?" ⚠ 바로 제출하지 않았어요":""}</p>`}
+setInterval(()=>{if(S.view==="today")render()},30000);
 function vToday(){
   const gs=todayGroups(),d=new Date();
   const passN=gs.filter(x=>x.passed).length;
@@ -489,6 +494,7 @@ function vToday(){
     <p class="muted small">감독 선생님 확인용</p>
     <div class="today-name">${esc(S.me.name)}</div>
     <p class="today-date">${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()} · 지금 <span id="clock">${hm(d.toISOString())}</span></p>
+    ${sinceLast(gs)}
   </div>
   ${gs.length?`<div class="units">${gs.map(x=>{const rk=x.final?finalKeyFor(x):"";return `<${rk?`button data-act="review" data-v="${esc(rk)}"`:"div"} class="unit trow">
       <div class="grow"><div class="name">${esc(TYPES[x.type]||x.type)} · ${esc(x.bookName)}${x.unitName?" "+esc(x.unitName):""}</div>
