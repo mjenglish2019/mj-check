@@ -194,6 +194,10 @@ function findBook(id){return S.full[id]||(S.content.books||[]).find(b=>b.id===id
 const PICK_BY={grammar:20,reading:10};
 function pickOf(t){return PICK_BY[t]||10}
 const MAXRETRY=3;
+/* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
+const BUILD="2026-10-15b";
+async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
+  if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
 let awayAt=0;
 function awayKey(q){return q&&!q.wrongMode&&q.bookId?q.bookId+"/"+q.unitId:""}
@@ -342,7 +346,7 @@ function syncNote(){const n=outbox().length,st=S.sync||{};
   return n?`<div class="note" style="background:var(--pend-bg);color:var(--pend)"><b>⏳ 아직 원장님께 안 간 결과 ${n}개</b><br>인터넷에 연결되면 자동으로 보내요.${st.state==="busy"?" (보내는 중…)":""}</div>
     <button class="wide" data-act="syncnow">지금 다시 보내기</button>`
   :`<div class="note" style="background:var(--ok-bg);color:var(--ok)"><b>✓ 시험 결과는 끝날 때마다 원장님께 자동으로 기록돼요.</b>${st.at?`<br>마지막 저장 ${hm(st.at)}`:""}</div>`}
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&S.view!=="quiz")sync()});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&S.view!=="quiz"){sync();checkBuild()}});
 window.addEventListener("online",()=>sync());
 setInterval(()=>{if(useApi()&&S.me&&outbox().length&&!syncing)sync()},60000);
 /* 앱 설치 (2026-10-13 앱 버전): 안드로이드 크롬은 설치 창을 바로 띄우고, 나머지는 순서 안내 */
@@ -531,7 +535,7 @@ function vHome(){
   }
   const tn=todayGroups().length;
   return header()+`<button class="todaybtn" data-act="today"><span>오늘 본 시험</span><span class="badge ${tn?"ok":"none"}">${tn}개 단원</span></button>
-  ${useApi()?`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 공부가 다 끝나면 부모님께 카톡을 보냅니다.</b><br>오늘 본 시험 → 부모님께 카톡으로 보내기</p>`:`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button>`;
+  ${useApi()?`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 공부가 다 끝나면 부모님께 카톡을 보냅니다.</b><br>오늘 본 시험 → 부모님께 카톡으로 보내기</p>`:`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button><p class="small muted" style="text-align:center;margin-top:18px">앱 버전 ${BUILD}</p>`;
 }
 
 function vVocabMenu(){
