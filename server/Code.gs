@@ -146,7 +146,7 @@ function txt_(s) {
 }
 function sec_(n) { n = Number(n) || 0; return n >= 60 ? Math.round(n / 60) + "분" : n + "초"; }
 function resRow_(me, r) {
-  var T = { vocab: "단어", grammar: "문법", reading: "독해" };
+  var T = { vocab: "단어", grammar: "문법", reading: "독해", naesin: "내신" };
   var st = r.pass ? "통과" : r.final ? "조교 확인" : "재시험";
   var wrong = (r.wrong && r.wrong.length) ? r.wrong.join(", ") : (r.wrongN ? "틀린 문제 " + r.wrongN + "개" : "");
   var d = new Date(r.at);

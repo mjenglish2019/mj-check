@@ -60,7 +60,7 @@ button.wide{width:100%}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{min-height:40px;padding:8px 13px;border-radius:999px;font-size:15px}
 .chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
-.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px}
 .tabs button{border:0;min-height:40px;font-size:15px;padding:6px 4px;border-radius:9px;background:transparent;color:var(--muted)}
 .tabs button[aria-selected="true"]{background:var(--hl);color:var(--hl-ink);font-weight:700}
 .units{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
@@ -141,7 +141,9 @@ details summary{cursor:pointer}
 <script>
 (function(){
 "use strict";
-const TYPES={vocab:"단어",grammar:"문법",reading:"독해"};
+const TYPES={vocab:"단어",grammar:"문법",reading:"독해",naesin:"내신"};
+/* 내신 탭 (2026-10-16): 학교 6곳. 자료는 books/<id>.json(type:"naesin", school:<학교 id>)로 넣고 content.json 인덱스에 school을 적는다 */
+const SCHOOLS=[{id:"haenuri",name:"해누리중"},{id:"jamsilw-m",name:"잠실여중"},{id:"garak-m",name:"가락중"},{id:"garak-h",name:"가락고"},{id:"jamsilw-h",name:"잠실여고"},{id:"baemyung",name:"배명고"}];
 const NUM=["①","②","③","④","⑤"];
 const app=document.getElementById("app");
 const S={content:null,full:{},me:null,view:"start",tab:"vocab",sel:{},quiz:null,cards:null,result:null,
@@ -188,14 +190,14 @@ function groupLog(log){
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 function books(t){return (S.content.books||[]).filter(b=>b.type===t)}
-function booksFor(t){return books(t)}
+function booksFor(t){return t==="naesin"?books(t).filter(b=>b.school===S.sel.naesinSchool):books(t)}
 function findBook(id){return S.full[id]||(S.content.books||[]).find(b=>b.id===id)}
 /* 시험마다 뽑는 문항 수: 문법 20(은행 전부, 순서만 랜덤), 독해 10(지문당 10문항 전부) — 2026-10-12 원장님 결정 */
-const PICK_BY={grammar:20,reading:10};
+const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t){return PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-15c";
+const BUILD="2026-10-16a";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -516,7 +518,7 @@ function vToday(){
 }
 function vHome(){
   const t=S.tab;
-  const tabs=`<div class="tabs" role="tablist">${["vocab","grammar","reading"].map(k=>`<button role="tab" data-act="tab" data-v="${k}" aria-selected="${k===t||(t==="wrong"&&k==="vocab")}">${TYPES[k]}</button>`).join("")}</div>`;
+  const tabs=`<div class="tabs" role="tablist">${["vocab","grammar","reading","naesin"].map(k=>`<button role="tab" data-act="tab" data-v="${k}" aria-selected="${k===t||(t==="wrong"&&k==="vocab")}">${TYPES[k]}</button>`).join("")}</div>`;
   let body="";
   if(t==="wrong"){
     const wb=wrongBook();
@@ -531,8 +533,14 @@ function vHome(){
     const sel=S.sel[t]&&list.some(x=>x.id===S.sel[t])?S.sel[t]:(list[0]&&list[0].id)||"";
     S.sel[t]=sel;
     const b=findBook(sel);
-    body=`<div class="panel">
-      <label class="lbl" for="bk">내 ${TYPES[t]} 교재 고르기</label>
+    const sch=t==="naesin"?SCHOOLS.find(x=>x.id===S.sel.naesinSchool):null;
+    const schoolBar=t==="naesin"?`<div class="panel"><label class="lbl">학교 고르기</label>
+      <div class="chips" role="tablist">${SCHOOLS.map(x=>`<button class="chip" role="tab" data-act="school" data-v="${x.id}" aria-pressed="${!!sch&&sch.id===x.id}" aria-selected="${!!sch&&sch.id===x.id}">${esc(x.name)}</button>`).join("")}</div>
+      ${sch?"":`<p class="muted small">학교를 누르면 그 학교 내신 대비 자료가 나와요.</p>`}</div>`:"";
+    if(t==="naesin"&&!sch)body=schoolBar;
+    else if(t==="naesin"&&!list.length)body=schoolBar+`<div class="panel"><div class="empty">${esc(sch.name)} 내신 대비 자료를 준비하고 있어요.<br>자료가 올라오면 여기에 나와요.</div></div>`;
+    else body=schoolBar+`<div class="panel">
+      <label class="lbl" for="bk">${t==="naesin"?esc(sch.name)+" 자료 고르기":"내 "+TYPES[t]+" 교재 고르기"}</label>
       ${!list.length?`<div class="empty">등록된 ${TYPES[t]} 교재가 없어요. 원장님께 말씀드려 주세요.</div>`
         :`<select id="bk" data-act="book">${list.map(x=>`<option value="${esc(x.id)}" ${x.id===sel?"selected":""}>${esc(x.name)}</option>`).join("")}</select>`}
     </div>
@@ -972,6 +980,7 @@ app.addEventListener("click",async e=>{
     case "nameedit":S.nameEdit=!S.nameEdit;render();break;
     case "namehide":{const n=(S.nameList||[])[Number(v)];if(n){hideName(n);toast(`${n} 이름을 목록에서 뺐어요`)}if(!knownNames().length)S.nameEdit=false;render();break;}
     case "tab":S.tab=v;render();break;
+    case "school":S.sel.naesinSchool=v;delete S.sel.naesin;lsSet(stuKey("sel"),S.sel);lsSet(stuKey("selAt"),Date.now());render();break;
     case "home":goHome();break;
     case "review":if(v)openReview(v);break;
     case "a2hs":doInstall();break;
