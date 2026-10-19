@@ -132,6 +132,9 @@ a.linkbtn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .a2hs[aria-expanded="true"]{background:var(--accent);color:var(--accent-ink)}
 details summary{cursor:pointer}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:10px;font-size:14.5px;z-index:9;max-width:calc(100% - 32px)}
+.dta{min-height:64px;font-size:15px}
+.dchip{min-height:34px;padding:5px 11px;font-size:14px}
+.dk{min-width:5em;font-weight:700;color:var(--muted);font-size:14px;flex:none}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -197,9 +200,9 @@ const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t){return PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-16a";
+const BUILD="2026-10-19a";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
-  if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
+  if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
 let awayAt=0;
 function awayKey(q){return q&&!q.wrongMode&&q.bookId?q.bookId+"/"+q.unitId:""}
@@ -300,11 +303,11 @@ async function sync(){
     S.sync={state:"ok",at:new Date().toISOString()};
   }catch(e){S.sync={state:"fail",at:S.sync.at}}
   finally{syncing=false;
-    if(S.me&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="start"&&S.view!=="admin")render();
+    if(S.me&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="start"&&S.view!=="admin"&&S.view!=="diary")render();
     if(syncAgain){syncAgain=false;setTimeout(sync,400)}}
 }
 function authFail(){try{localStorage.removeItem("mj_me")}catch(e){}
-  S.me=null;S.quiz=null;S.result=null;S.view="start";S.loginMsg="비밀번호가 바뀌었어요. 다시 들어와 주세요.";render()}
+  diaryReset();S.me=null;S.quiz=null;S.result=null;S.view="start";S.loginMsg="비밀번호가 바뀌었어요. 다시 들어와 주세요.";render()}
 /* 예전에 이름만 쓰던 기록(띄어쓰기만 다른 이름 포함)을 로그인 이름으로 옮김 */
 function migrateName(to){
   const from=knownNames().find(n=>n!==to&&nameKey(n)===nameKey(to));if(!from)return;
@@ -325,7 +328,7 @@ async function doLogin(){
     lsSet("mj_ids",[res.id].concat(lsGet("mj_ids",[]).filter(x=>x!==res.id)).slice(0,8));
     applyState(mergeState(collectState(),res.state));
     S.sel=lsGet(stuKey("sel"),{});S.tab="vocab";S.view="home";S.loginMsg="";
-    sync();
+    diaryReset();sync();diaryLoad();
   }catch(e){S.loginMsg="인터넷 연결을 확인해 주세요."}
   finally{S.loginBusy=false;render();window.scrollTo(0,0)}
 }
@@ -348,9 +351,120 @@ function syncNote(){const n=outbox().length,st=S.sync||{};
   return n?`<div class="note" style="background:var(--pend-bg);color:var(--pend)"><b>⏳ 아직 원장님께 안 간 결과 ${n}개</b><br>인터넷에 연결되면 자동으로 보내요.${st.state==="busy"?" (보내는 중…)":""}</div>
     <button class="wide" data-act="syncnow">지금 다시 보내기</button>`
   :`<div class="note" style="background:var(--ok-bg);color:var(--ok)"><b>✓ 시험 결과는 끝날 때마다 원장님께 자동으로 기록돼요.</b>${st.at?`<br>마지막 저장 ${hm(st.at)}`:""}</div>`}
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&S.view!=="quiz"){sync();checkBuild()}});
-window.addEventListener("online",()=>sync());
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){if(S.view==="diary")diarySave(false);return}
+  if(S.view!=="quiz"){sync();diaryLoad();checkBuild()}});
+window.addEventListener("online",()=>{sync();diaryLoad()});
 setInterval(()=>{if(useApi()&&S.me&&outbox().length&&!syncing)sync()},60000);
+setInterval(()=>{if(useApi()&&S.me&&S.diary.today&&ymd()>S.diary.today)diaryLoad()},60000);
+
+/* ---------- 알림장 (2026-10-19) ----------
+   학생이 직접 쓰는 숙제 알림장. 서버(알림장 시트)에 날짜별로 한 장씩 저장.
+   규칙: 그날 알림장만 쓸 수 있고, '확정'을 누르거나 날짜가 바뀌면(밤 12시) 잠겨서 고칠 수 없다. 잠금은 서버가 거부해서 지킨다.
+   쓰는 도중 글은 이 기기에도 임시로 남겨(mj_diary_<이름>_<날짜>) 인터넷이 끊겨도 안 날아간다. */
+const DIARY_F=[["vocab","단어"],["listen","듣기"],["read","독해"],["gram","문법"],["syn","구문해석"],["write","영작"],["etc","기타"]];   /* 서버 DIARY_KEYS와 같은 순서 */
+const DIARY_BASE="수업시간 진도";
+function diaryReset(){clearTimeout((S.diary||{}).t);S.diary={today:null,entries:{},sel:null,saveState:"",savedAt:null,q:null,t:null}}
+diaryReset();
+function diaryToday(){return S.diary.today||ymd()}
+function parseYmd(s){const p=String(s).split("-").map(Number);return new Date(p[0],p[1]-1,p[2])}
+function dLabel(s){const d=parseYmd(s);return `${d.getMonth()+1}/${d.getDate()} (${WD[d.getDay()]})`}
+function diaryLocked(date){const e=S.diary.entries[date];return date<diaryToday()||!!(e&&e.st!=="작성 중")}
+function diaryDraft(date){return lsGet(stuKey("diary_"+date),null)}
+function diaryFields(date){const e=S.diary.entries[date];
+  if(diaryLocked(date))return (e&&e.f)||{};
+  const dr=diaryDraft(date);return dr&&dr.dirty?dr.f:((e&&e.f)||{})}
+function diaryChips(k){const seen=new Set(),out=[];
+  const add=t=>{t=String(t||"").trim();if(t&&!seen.has(t)){seen.add(t);out.push(t)}};
+  if(k==="read"||k==="gram"||k==="write")add(DIARY_BASE);
+  Object.keys(S.diary.entries).sort().reverse().forEach(d=>add((S.diary.entries[d].f||{})[k]));
+  return out.slice(0,6)}
+function diaryPrev(date){const E=S.diary.entries;
+  const ks=Object.keys(E).filter(d=>d<date&&DIARY_F.some(x=>(E[d].f||{})[x[0]])).sort();return ks.length?ks[ks.length-1]:null}
+function diaryMissed(){const cut=ymd(new Date(Date.now()-6*86400000));
+  return Object.values(S.diary.entries).filter(e=>e.st==="자동 잠금"&&e.d>=cut).length}
+function diaryBadge(){const t=diaryToday(),e=S.diary.entries[t],dr=diaryDraft(t);
+  if(e&&e.st==="확정")return `<span class="badge ok">확정</span>`;
+  if(e||(dr&&dr.dirty))return `<span class="badge pend">작성 중</span>`;
+  return `<span class="badge none">아직 안 썼어요</span>`}
+function diaryCard(){const miss=diaryMissed();
+  return `<button class="todaybtn" data-act="diary"><span>내 알림장</span>${diaryBadge()}</button>`+
+    (miss?`<p class="small" style="margin-top:-8px;color:var(--bad)"><b>확정하지 못해 잠긴 알림장이 최근 7일에 ${miss}개 있어요.</b></p>`:"")}
+function diarySaveNote(){const D=S.diary,s=D.saveState;
+  return s==="busy"?"저장하는 중…":s==="dirty"?"쓰는 중 · 잠시 뒤 저장돼요":s==="fail"?"⚠ 아직 저장되지 않았어요 · 인터넷에 연결되면 다시 저장해요":s==="ok"&&D.savedAt?"✓ "+hm(D.savedAt)+"에 저장했어요":""}
+function updateDsave(){const n=document.getElementById("dsave");if(n){n.textContent=diarySaveNote();n.style.color=S.diary.saveState==="fail"?"var(--bad)":""}}
+function isTypingDiary(){const a=document.activeElement;return !!(a&&a.dataset&&a.dataset.diary)}
+function diarySaveSoon(ms){const D=S.diary;clearTimeout(D.t);D.t=setTimeout(()=>diarySave(false),ms)}
+function diaryInput(k,val){const D=S.diary,date=diaryToday();if(diaryLocked(date))return;
+  const f=Object.assign({},diaryFields(date));f[k]=val;lsSet(stuKey("diary_"+date),{f,dirty:true,at:Date.now()});
+  D.saveState="dirty";updateDsave();diarySaveSoon(1500)}
+function diarySave(confirm){const D=S.diary;clearTimeout(D.t);D.q=(D.q||Promise.resolve()).then(()=>diarySaveNow(confirm)).catch(()=>false);return D.q}
+/* 돌려주는 값: true 저장됨 · null 안내를 이미 띄움 · false 실패(인터넷 등) */
+async function diarySaveNow(confirm){
+  const D=S.diary,me=S.me;if(!useApi()||!me||!me.token)return null;
+  const date=diaryToday();if(diaryLocked(date))return null;
+  const dr=diaryDraft(date);if(!confirm&&!(dr&&dr.dirty))return true;
+  const f=Object.assign({},diaryFields(date));D.saveState="busy";updateDsave();
+  try{
+    const res=await api({act:confirm?"diary_confirm":"diary_save",id:me.id,token:me.token,date,f});
+    if(S.me!==me)return null;
+    if(!res||!res.ok){
+      if(res&&res.code==="auth"){authFail();return null}
+      if(res&&(res.code==="locked"||res.code==="future"||res.code==="date")){await diaryLoad();toast(res.code==="locked"?"이미 잠긴 알림장이라 고칠 수 없어요":"날짜가 맞지 않아요. 앱을 새로 열어 주세요");return null}
+      if(res&&res.code==="empty"){toast("내용을 하나라도 써 주세요");D.saveState="dirty";updateDsave();return null}
+      throw new Error(res&&res.code)}
+    D.entries[res.entry.d]=res.entry;
+    const cur=diaryDraft(date);
+    if(!confirm&&cur&&JSON.stringify(cur.f)!==JSON.stringify(f)){D.saveState="dirty";diarySaveSoon(1000)}   /* 저장하는 동안 더 쓴 글이 있음 */
+    else{try{localStorage.removeItem(stuKey("diary_"+date))}catch(e){}D.saveState="ok";D.savedAt=new Date().toISOString()}
+    if(confirm){toast("확정했어요");if(S.view==="diary")render()}
+    updateDsave();return true;
+  }catch(e){D.saveState="fail";updateDsave();clearTimeout(D.t);D.t=setTimeout(()=>diarySave(false),20000);return false}
+}
+async function diaryLoad(){
+  const D=S.diary,me=S.me;if(!useApi()||!me||!me.token)return;
+  try{
+    const res=await api({act:"diary_get",id:me.id,token:me.token});
+    if(S.me!==me)return;
+    if(!res||!res.ok){if(res&&res.code==="auth")authFail();return}
+    const before=JSON.stringify([D.today,D.entries]);
+    D.today=res.today;D.entries={};(res.entries||[]).forEach(e=>{D.entries[e.d]=e});
+    /* 바뀐 게 있을 때만 다시 그림 (쓰는 중이거나 '한 번 더 누르면 확정' 안내가 떠 있으면 건드리지 않음) */
+    const idle=!isTypingDiary()&&!document.querySelector('[data-act="dconfirm"][data-confirm="1"]');
+    if(before!==JSON.stringify([D.today,D.entries])&&(S.view==="home"||(S.view==="diary"&&idle)))render();
+    const dr=diaryDraft(D.today);if(dr&&dr.dirty&&!diaryLocked(D.today))diarySaveSoon(500);   /* 못 보낸 글이 있으면 다시 보냄 */
+  }catch(e){}
+}
+function diaryFill(fields){const date=diaryToday();if(diaryLocked(date))return;
+  lsSet(stuKey("diary_"+date),{f:fields,dirty:true,at:Date.now()});
+  DIARY_F.forEach(x=>{const ta=document.getElementById("d_"+x[0]);if(ta)ta.value=fields[x[0]]||""});
+  S.diary.saveState="dirty";updateDsave();diarySaveSoon(1000)}
+function vDiary(){
+  const D=S.diary,today=diaryToday(),sel=D.sel||today,e=D.entries[sel]||null,locked=diaryLocked(sel),f=diaryFields(sel);
+  const dates=[...new Set(Object.keys(D.entries).concat([today]))].sort().reverse().slice(0,14);
+  const chipsRow=`<div class="chips" role="tablist">${dates.map(d=>{const x=D.entries[d],p=parseYmd(d);
+    return `<button class="chip" role="tab" data-act="ddate" data-v="${d}" aria-pressed="${d===sel}">${p.getMonth()+1}/${p.getDate()}${d===today?" 오늘":""}${x&&x.st==="확정"?" ✓":x&&x.st==="자동 잠금"?" 잠김":""}</button>`}).join("")}</div>`;
+  let body="";
+  if(locked){
+    const rows=DIARY_F.filter(x=>String(f[x[0]]||"").trim());
+    body=(e?(e.st==="확정"?`<div class="note" style="background:var(--ok-bg);color:var(--ok)"><b>✓ ${esc(e.conf||"")}에 확정했어요.</b> 확정한 알림장은 고칠 수 없어요.</div>`
+        :`<div class="note" style="background:var(--pend-bg);color:var(--pend)"><b>확정하지 않고 날짜가 지나서 잠겼어요.</b> 고칠 수 없어요.</div>`)
+      :`<div class="panel"><div class="empty">이 날은 알림장이 없어요.</div></div>`)+
+      (e?`<div class="panel">${rows.length?`<div class="wlist">${rows.map(x=>`<div><span class="dk">${x[1]}</span><span>${br(esc(f[x[0]]))}</span></div>`).join("")}</div>`:`<div class="empty">적은 내용이 없어요.</div>`}</div>`:"");
+  }else{
+    const prev=diaryPrev(sel);
+    body=`<div class="note">확정하기 전에는 고칠 수 있어요. <b style="color:var(--ink)">오늘 안에 확정하지 않으면 밤 12시에 잠겨요.</b></div>
+    <div class="panel">${DIARY_F.map(x=>`<div class="stack" style="gap:6px"><label class="lbl" for="d_${x[0]}">${x[1]}</label>
+      <textarea class="dta" id="d_${x[0]}" data-diary="${x[0]}" maxlength="300" autocomplete="off" spellcheck="false">${esc(f[x[0]]||"")}</textarea>
+      <div class="chips">${diaryChips(x[0]).map((c,i)=>`<button class="chip dchip" data-act="dchip" data-k="${x[0]}" data-v="${i}">${esc(c.length>28?c.slice(0,27)+"…":c)}</button>`).join("")}</div></div>`).join("")}
+      <p class="small muted" id="dsave" style="min-height:1.5em">${esc(diarySaveNote())}</p>
+      ${prev?`<button data-act="dprev">지난 알림장 불러오기 (${dLabel(prev)})</button>`:""}
+      <button class="primary wide" data-act="dconfirm">확정하기</button>
+      <p class="muted small">선생님께 보여 드릴 때는 확정한 알림장을 보여 줘요.</p></div>`;
+  }
+  return header()+`<button class="ghost" data-act="home" style="align-self:flex-start">← 목록으로</button>
+  <div class="stack"><h1>내 <span class="mark">알림장</span></h1><p class="muted small">${esc(S.me.name)} · ${dLabel(sel)}</p></div>`+chipsRow+body;
+}
 /* 앱 설치 (2026-10-13 앱 버전): 안드로이드 크롬은 설치 창을 바로 띄우고, 나머지는 순서 안내 */
 let installEvt=null;
 function isApp(){try{return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}catch(e){return false}}
@@ -549,7 +663,7 @@ function vHome(){
   }
   const tn=todayGroups().length;
   return header()+`<button class="todaybtn" data-act="today"><span>오늘 본 시험</span><span class="badge ${tn?"ok":"none"}">${tn}개 단원</span></button>
-  ${useApi()?`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 공부가 다 끝나면 부모님께 카톡을 보냅니다.</b><br>오늘 본 시험 → 부모님께 카톡으로 보내기</p>`:`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button><p class="small muted" style="text-align:center;margin-top:18px">앱 버전 ${BUILD}</p>`;
+  ${useApi()?`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 공부가 다 끝나면 부모님께 카톡을 보냅니다.</b><br>오늘 본 시험 → 부모님께 카톡으로 보내기</p>`:`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}${useApi()?diaryCard():""}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button><p class="small muted" style="text-align:center;margin-top:18px">앱 버전 ${BUILD}</p>`;
 }
 
 function vVocabMenu(){
@@ -910,6 +1024,7 @@ function render(){
   else if(S.view==="result")h=vResult();
   else if(S.view==="today")h=vToday();
   else if(S.view==="review")h=vReview();
+  else if(S.view==="diary")h=vDiary();
   app.innerHTML=h;
 }
 function readForm(){
@@ -922,10 +1037,12 @@ function readForm(){
 function goHome(){S.view="home";render();window.scrollTo(0,0)}
 
 app.addEventListener("input",e=>{
+  if(e.target.dataset&&e.target.dataset.diary){diaryInput(e.target.dataset.diary,e.target.value);return}
   if(e.target.id==="aq"){S.admin.q=e.target.value;const pos=e.target.selectionStart;render();const n=document.getElementById("aq");if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}return}
   if(e.target.id==="ftext"){readForm();const f=S.admin.form;const n=parseFor(f.type,f.text).length;
     const p=document.getElementById("pcount");if(p){p.textContent=n?n+"개 인식됐어요.":"아직 인식된 항목이 없어요.";p.className="small "+(n?"":"muted")}}
 });
+app.addEventListener("focusout",e=>{if(S.view==="diary"&&e.target.dataset&&e.target.dataset.diary)diarySave(false)});
 app.addEventListener("change",e=>{
   const act=e.target.dataset.act;
   if(act==="book"){S.sel[S.tab]=e.target.value;render();loadBook(e.target.value).catch(()=>{})}
@@ -975,7 +1092,19 @@ app.addEventListener("click",async e=>{
     case "login":doLogin();break;
     case "pickid":{const x=lsGet("mj_ids",[])[Number(v)];if(x){S.loginId=x;S.loginMsg="";render();const p=document.getElementById("lpw");if(p)p.focus()}break;}
     case "syncnow":sync();break;
-    case "logout":if(useApi()){try{localStorage.removeItem("mj_me")}catch(err){}S.loginId="";S.loginMsg=""}S.me=null;S.quiz=null;S.result=null;S.cards=null;S.nameEdit=false;S.view="start";render();window.scrollTo(0,0);break;
+    case "diary":{S.diary.sel=null;S.view="diary";render();window.scrollTo(0,0);diaryLoad();break;}
+    case "ddate":S.diary.sel=v;render();break;
+    case "dchip":{const k=el.dataset.k,c=diaryChips(k)[Number(v)],ta=document.getElementById("d_"+k);if(c&&ta){ta.value=c;diaryInput(k,c)}break;}
+    case "dprev":{const date=diaryToday(),p=diaryPrev(date);if(!p)return;const src=S.diary.entries[p].f||{},cur=Object.assign({},diaryFields(date));let n=0;
+      DIARY_F.forEach(x=>{if(!String(cur[x[0]]||"").trim()&&src[x[0]]){cur[x[0]]=src[x[0]];n++}});
+      if(!n){toast("빈 칸이 없어서 불러올 게 없어요");return}diaryFill(cur);toast(`빈 칸 ${n}개를 채웠어요. 숫자만 고쳐 주세요`);break;}
+    case "dconfirm":{
+      if(el.dataset.confirm!=="1"){const t0=el.textContent;el.dataset.confirm="1";el.textContent="한 번 더 누르면 확정돼요 (확정하면 고칠 수 없어요)";
+        setTimeout(()=>{if(el.isConnected){el.dataset.confirm="";el.textContent=t0}},4000);return}
+      el.disabled=true;const ok=await diarySave(true);
+      if(ok===false)toast("확정하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요");
+      if(el.isConnected)el.disabled=false;break;}
+    case "logout":if(useApi()){try{localStorage.removeItem("mj_me")}catch(err){}S.loginId="";S.loginMsg=""}diaryReset();S.me=null;S.quiz=null;S.result=null;S.cards=null;S.nameEdit=false;S.view="start";render();window.scrollTo(0,0);break;
     case "pickname":{const n=(S.nameList||[])[Number(v)];if(n)enter(n);break;}
     case "nameedit":S.nameEdit=!S.nameEdit;render();break;
     case "namehide":{const n=(S.nameList||[])[Number(v)];if(n){hideName(n);toast(`${n} 이름을 목록에서 뺐어요`)}if(!knownNames().length)S.nameEdit=false;render();break;}
@@ -1099,7 +1228,7 @@ async function boot(){
   else if(me&&me.name){if(!lsGet("mj_names",{})[me.name])rememberName(me.name);
     if(knownNames().length<=1){S.me=me;S.sel=lsGet(stuKey("sel"),{});S.view="home"}}
   render();
-  if(useApi()&&S.me)sync();
+  if(useApi()&&S.me){sync();diaryLoad()}
   if(window.claude&&window.claude.use){
     window.claude.use("user").then(async u=>{if(!u)return;let ok=false;try{ok=await u.canEdit()}catch(e){}
       if(ok){S.canEdit=true;if(S.view!=="quiz"&&S.view!=="cards")render()}}).catch(()=>{});

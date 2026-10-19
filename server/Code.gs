@@ -10,6 +10,8 @@
  *  - 학생 : 아이디 · 비밀번호 · 이름(학교+학년) · 메모   ← 원장님이 관리
  *  - 결과 : 시험이 끝날 때마다 한 줄씩 자동으로 쌓임
  *  - 오늘 : 오늘 결과만 모아 보기(자동)
+ *  - 알림장 : 학생이 앱에서 쓴 알림장이 날짜별로 한 줄씩 쌓임(자동, 고치지 마세요)
+ *      상태 = 작성 중 / 확정 / 자동 잠금. 확정하거나 날짜가 지나면(밤 12시) 서버가 수정을 거부함
  *  - 상태 : 학생별 기록 저장용(숨김, 고치지 마세요)
  */
 
@@ -17,6 +19,16 @@ var SHEET_STU = "학생", SHEET_RES = "결과", SHEET_TODAY = "오늘", SHEET_ST
 var RES_HEAD = ["시간", "아이디", "이름", "구분", "교재", "단원", "점수", "맞은 수", "결과", "재시험", "틀린 것", "화면 이탈", "조교 확인 영작"];
 var CHUNK = 40000;          // 셀 하나에 넣는 글자 수(시트 한도 5만 자보다 작게)
 var MAX_FAIL = 10;          // 비밀번호 10번 틀리면 10분 잠금
+
+/* 알림장 (2026-10-19) */
+var SHEET_DIARY = "알림장";
+var DIARY_HEAD = ["날짜", "아이디", "이름", "단어", "듣기", "독해", "문법", "구문해석", "영작", "기타", "상태", "확정 시각", "마지막 수정"];
+var DIARY_KEYS = ["vocab", "listen", "read", "gram", "syn", "write", "etc"];   // 시트 D~J열과 같은 순서 (앱 DIARY_F와 같게)
+var DIARY_MAX = 300;        // 칸 하나에 쓸 수 있는 글자 수
+var DIARY_SCAN = 6000;      // 시트 맨 아래에서 몇 줄까지 찾아볼지
+var DIARY_SHOW = 30;        // 앱에 돌려주는 최근 알림장 개수
+var TZ = "Asia/Seoul";
+var ST_DRAFT = "작성 중", ST_DONE = "확정", ST_AUTO = "자동 잠금";
 
 /* ---------- 처음 한 번 실행 ---------- */
 function 처음설정() {
@@ -48,6 +60,13 @@ function 처음설정() {
     st = ss.insertSheet(SHEET_STATE);
     st.appendRow(["아이디", "저장 시각", "기록(고치지 마세요)"]);
     st.hideSheet();
+  }
+  var dy = ss.getSheetByName(SHEET_DIARY);
+  if (!dy) {
+    dy = ss.insertSheet(SHEET_DIARY);
+    dy.getRange("A:M").setNumberFormat("@");   // 전부 글자로 저장(=로 시작하는 글이 수식이 되지 않게)
+    dy.appendRow(DIARY_HEAD);
+    dy.setFrozenRows(1);
   }
   secret_();
 }
@@ -107,7 +126,77 @@ function handle_(q) {
       lock.releaseLock();
     }
   }
+  if (q.act === "diary_get" || q.act === "diary_save" || q.act === "diary_confirm") return diary_(me, q);
   return { ok: false, code: "act" };
+}
+
+/* ---------- 알림장 (2026-10-19) ----------
+   규칙: 그날(한국 시간) 알림장만 쓸 수 있고, 확정을 누르거나 날짜가 바뀌면 서버가 수정·삭제를 거부한다.
+   날짜가 지났는데 확정 못 한 알림장은 상태가 '자동 잠금'으로 바뀐다(아무 학생이나 앱을 쓸 때 정리됨). */
+function todayKst_() { return Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd"); }
+function nowKst_() { return Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm"); }
+function dstr_(v) { return v instanceof Date ? Utilities.formatDate(v, TZ, "yyyy-MM-dd") : String(v == null ? "" : v).trim(); }
+function tstr_(v) { return v instanceof Date ? Utilities.formatDate(v, TZ, "yyyy-MM-dd HH:mm") : String(v == null ? "" : v).trim(); }
+
+function diaryWindow_(sh) {
+  var n = sh.getLastRow();
+  if (n < 2) return { first: 2, vals: [] };
+  var first = Math.max(2, n - DIARY_SCAN + 1);
+  var vals = sh.getRange(first, 1, n - first + 1, DIARY_HEAD.length).getValues();
+  for (var i = 0; i < vals.length; i++) { vals[i][0] = dstr_(vals[i][0]); vals[i][10] = String(vals[i][10] || "").trim(); }
+  return { first: first, vals: vals };
+}
+function sweepDiary_(sh, win, today) {
+  for (var i = 0; i < win.vals.length; i++) {
+    var v = win.vals[i];
+    if (v[0] && v[0] < today && v[10] === ST_DRAFT) { v[10] = ST_AUTO; sh.getRange(win.first + i, 11).setValue(ST_AUTO); }
+  }
+}
+function diaryFind_(win, id, date) {
+  for (var i = win.vals.length - 1; i >= 0; i--) if (win.vals[i][0] === date && key_(win.vals[i][1]) === key_(id)) return i;
+  return -1;
+}
+function entryOf_(v) {
+  var f = {};
+  for (var k = 0; k < DIARY_KEYS.length; k++) f[DIARY_KEYS[k]] = String(v[3 + k] == null ? "" : v[3 + k]);
+  return { d: dstr_(v[0]), f: f, st: String(v[10] || ST_DRAFT), conf: tstr_(v[11]), upd: tstr_(v[12]) };
+}
+function diaryList_(win, id) {
+  var out = [];
+  for (var i = win.vals.length - 1; i >= 0 && out.length < DIARY_SHOW; i--)
+    if (key_(win.vals[i][1]) === key_(id)) out.push(entryOf_(win.vals[i]));
+  out.sort(function (a, b) { return a.d < b.d ? 1 : a.d > b.d ? -1 : 0; });
+  return out;
+}
+function cleanFields_(f) {
+  var out = [];
+  for (var k = 0; k < DIARY_KEYS.length; k++) out.push(String((f && f[DIARY_KEYS[k]]) || "").replace(/\r/g, "").trim().slice(0, DIARY_MAX));
+  return out;
+}
+function diary_(me, q) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    var sh = sheet_(SHEET_DIARY), today = todayKst_();
+    var win = diaryWindow_(sh);
+    sweepDiary_(sh, win, today);
+    if (q.act === "diary_get") return { ok: true, today: today, entries: diaryList_(win, me.id) };
+    var date = String(q.date || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, code: "date" };
+    if (date > today) return { ok: false, code: "future" };
+    if (date < today) return { ok: false, code: "locked" };       // 날짜가 지난 알림장은 고칠 수 없음
+    var idx = diaryFind_(win, me.id, date);
+    if (idx >= 0 && win.vals[idx][10] !== ST_DRAFT) return { ok: false, code: "locked" };   // 확정·자동 잠금
+    var f = cleanFields_(q.f), confirm = q.act === "diary_confirm";
+    if (confirm && !f.some(function (x) { return x !== ""; })) return { ok: false, code: "empty" };
+    var now = nowKst_();
+    var row = [date, me.id, me.name].concat(f, [confirm ? ST_DONE : ST_DRAFT, confirm ? now : "", now]);
+    var r = idx >= 0 ? win.first + idx : sh.getLastRow() + 1;
+    sh.getRange(r, 1, 1, DIARY_HEAD.length).setValues([row]);
+    return { ok: true, entry: entryOf_(row) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* ---------- 학생 ---------- */
