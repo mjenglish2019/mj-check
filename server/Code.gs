@@ -22,7 +22,10 @@ var MAX_FAIL = 10;          // 비밀번호 10번 틀리면 10분 잠금
 
 /* 알림장 (2026-10-19) */
 var SHEET_DIARY = "알림장";
-var DIARY_HEAD = ["날짜", "아이디", "이름", "단어", "듣기", "독해", "문법", "구문해석", "영작", "기타", "상태", "확정 시각", "마지막 수정"];
+var DIARY_HEAD = ["날짜", "아이디", "이름", "단어", "듣기", "독해", "문법", "구문해석", "영작", "기타", "상태", "확정 시각", "마지막 수정", "완료 확인", "확인 시각"];
+var DIARY_LABELS = DIARY_HEAD.slice(3, 10);   // 단어 ~ 기타 (칸 이름)
+var DIARY_BODY = 13;        // 학생이 쓰는 부분(A~M열). N~O열은 선생님 확인(완료 확인한 칸 이름, 확인 시각)
+var SHEET_SET = "설정";     // B1 = 선생님 확인 비밀번호
 var DIARY_KEYS = ["vocab", "listen", "read", "gram", "syn", "write", "etc"];   // 시트 D~J열과 같은 순서 (앱 DIARY_F와 같게)
 var DIARY_MAX = 300;        // 칸 하나에 쓸 수 있는 글자 수
 var DIARY_SCAN = 6000;      // 시트 맨 아래에서 몇 줄까지 찾아볼지
@@ -64,9 +67,15 @@ function 처음설정() {
   var dy = ss.getSheetByName(SHEET_DIARY);
   if (!dy) {
     dy = ss.insertSheet(SHEET_DIARY);
-    dy.getRange("A:M").setNumberFormat("@");   // 전부 글자로 저장(=로 시작하는 글이 수식이 되지 않게)
+    dy.getRange("A:O").setNumberFormat("@");   // 전부 글자로 저장(=로 시작하는 글이 수식이 되지 않게)
     dy.appendRow(DIARY_HEAD);
     dy.setFrozenRows(1);
+  }
+  var se = ss.getSheetByName(SHEET_SET);
+  if (!se) {
+    se = ss.insertSheet(SHEET_SET);
+    se.getRange("B:B").setNumberFormat("@");
+    se.appendRow(["선생님 확인 비밀번호 (숫자 4자리를 오른쪽 칸에 적어 주세요)", ""]);
   }
   secret_();
 }
@@ -126,7 +135,7 @@ function handle_(q) {
       lock.releaseLock();
     }
   }
-  if (q.act === "diary_get" || q.act === "diary_save" || q.act === "diary_confirm") return diary_(me, q);
+  if (q.act === "diary_get" || q.act === "diary_save" || q.act === "diary_confirm" || q.act === "diary_check") return diary_(me, q);
   return { ok: false, code: "act" };
 }
 
@@ -156,10 +165,35 @@ function diaryFind_(win, id, date) {
   for (var i = win.vals.length - 1; i >= 0; i--) if (win.vals[i][0] === date && key_(win.vals[i][1]) === key_(id)) return i;
   return -1;
 }
+/* 선생님이 '완료 확인'한 칸: 시트에는 "단어, 듣기"처럼 칸 이름으로, 앱에는 키 배열로 */
+function parseCk_(s) {
+  var out = [], parts = String(s == null ? "" : s).split(/[,，、\s]+/);
+  for (var i = 0; i < parts.length; i++) {
+    var k = DIARY_LABELS.indexOf(parts[i]);
+    if (k >= 0 && out.indexOf(DIARY_KEYS[k]) < 0) out.push(DIARY_KEYS[k]);
+  }
+  return out;
+}
+function ckText_(keys) {
+  var out = [];
+  for (var k = 0; k < DIARY_KEYS.length; k++) if (keys.indexOf(DIARY_KEYS[k]) >= 0) out.push(DIARY_LABELS[k]);
+  return out.join(", ");
+}
 function entryOf_(v) {
   var f = {};
   for (var k = 0; k < DIARY_KEYS.length; k++) f[DIARY_KEYS[k]] = String(v[3 + k] == null ? "" : v[3 + k]);
-  return { d: dstr_(v[0]), f: f, st: String(v[10] || ST_DRAFT), conf: tstr_(v[11]), upd: tstr_(v[12]) };
+  return { d: dstr_(v[0]), f: f, st: String(v[10] || ST_DRAFT), conf: tstr_(v[11]), upd: tstr_(v[12]), ck: parseCk_(v[13]), ckt: tstr_(v[14]) };
+}
+/* 선생님 확인 비밀번호: 시트 '설정' B1. 10번 틀리면 그 학생 계정에서 10분 동안 막음 */
+function pinCheck_(me, pin) {
+  var cache = CacheService.getScriptCache(), fk = "pinfail:" + key_(me.id), fails = Number(cache.get(fk) || 0);
+  if (fails >= MAX_FAIL) return { ok: false, code: "pinlocked" };
+  var cell = sheet_(SHEET_SET).getRange(1, 2).getValues()[0][0];
+  var real = String(cell == null ? "" : cell).trim();
+  if (!real) return { ok: false, code: "nopin" };
+  if (String(pin == null ? "" : pin).trim() !== real) { cache.put(fk, String(fails + 1), 600); return { ok: false, code: "badpin" }; }
+  cache.remove(fk);
+  return null;
 }
 function diaryList_(win, id) {
   var out = [];
@@ -178,9 +212,31 @@ function diary_(me, q) {
   lock.waitLock(25000);
   try {
     var sh = sheet_(SHEET_DIARY), today = todayKst_();
+    if (String(sh.getRange(1, 14).getValue() || "") !== DIARY_HEAD[13]) {   // 예전 시트에는 N~O열 제목을 붙임
+      sh.getRange("N:O").setNumberFormat("@");
+      sh.getRange(1, 14, 1, 2).setValues([[DIARY_HEAD[13], DIARY_HEAD[14]]]);
+    }
     var win = diaryWindow_(sh);
     sweepDiary_(sh, win, today);
     if (q.act === "diary_get") return { ok: true, today: today, entries: diaryList_(win, me.id) };
+    if (q.act === "diary_check") {          // 선생님이 숙제를 한 칸을 확인(또는 취소). 날짜가 지나 잠긴 알림장도 확인할 수 있음
+      var bad = pinCheck_(me, q.pin);
+      if (bad) return bad;
+      var d2 = String(q.date || ""), i2 = /^\d{4}-\d{2}-\d{2}$/.test(d2) ? diaryFind_(win, me.id, d2) : -1;
+      if (i2 < 0) return { ok: false, code: "none" };
+      var v2 = win.vals[i2], cur = parseCk_(v2[13]), ks = Array.isArray(q.keys) ? q.keys : [];
+      for (var j = 0; j < ks.length; j++) {
+        var kk = DIARY_KEYS.indexOf(ks[j]);
+        if (kk < 0 || String(v2[3 + kk] || "").trim() === "") continue;   // 내용이 있는 칸만
+        var at = cur.indexOf(ks[j]);
+        if (q.on && at < 0) cur.push(ks[j]);
+        else if (!q.on && at >= 0) cur.splice(at, 1);
+      }
+      var tm = nowKst_();
+      v2[13] = ckText_(cur); v2[14] = tm;
+      sh.getRange(win.first + i2, 14, 1, 2).setValues([[v2[13], tm]]);
+      return { ok: true, entry: entryOf_(v2) };
+    }
     var date = String(q.date || "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, code: "date" };
     if (date > today) return { ok: false, code: "future" };
@@ -190,10 +246,14 @@ function diary_(me, q) {
     var f = cleanFields_(q.f), confirm = q.act === "diary_confirm";
     if (confirm && !f.some(function (x) { return x !== ""; })) return { ok: false, code: "empty" };
     var now = nowKst_();
-    var row = [date, me.id, me.name].concat(f, [confirm ? ST_DONE : ST_DRAFT, confirm ? now : "", now]);
+    var oldCk = idx >= 0 ? parseCk_(win.vals[idx][13]) : [], newCk = [];
+    for (var m = 0; m < DIARY_KEYS.length; m++)      // 선생님이 확인한 뒤 내용이 바뀐 칸은 확인이 풀림
+      if (oldCk.indexOf(DIARY_KEYS[m]) >= 0 && String(win.vals[idx][3 + m]) === f[m] && f[m] !== "") newCk.push(DIARY_KEYS[m]);
+    var row = [date, me.id, me.name].concat(f, [confirm ? ST_DONE : ST_DRAFT, confirm ? now : "", now]);   // DIARY_BODY(13)칸
     var r = idx >= 0 ? win.first + idx : sh.getLastRow() + 1;
-    sh.getRange(r, 1, 1, DIARY_HEAD.length).setValues([row]);
-    return { ok: true, entry: entryOf_(row) };
+    sh.getRange(r, 1, 1, DIARY_BODY).setValues([row]);           // 선생님 확인 열(N~O)은 건드리지 않음
+    if (newCk.length !== oldCk.length) sh.getRange(r, 14).setValue(ckText_(newCk));
+    return { ok: true, entry: entryOf_(row.concat([ckText_(newCk), idx >= 0 ? win.vals[idx][14] : ""])) };
   } finally {
     lock.releaseLock();
   }

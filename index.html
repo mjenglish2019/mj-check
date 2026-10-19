@@ -200,7 +200,7 @@ const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t){return PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-19a";
+const BUILD="2026-10-19b";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -364,7 +364,7 @@ setInterval(()=>{if(useApi()&&S.me&&S.diary.today&&ymd()>S.diary.today)diaryLoad
    쓰는 도중 글은 이 기기에도 임시로 남겨(mj_diary_<이름>_<날짜>) 인터넷이 끊겨도 안 날아간다. */
 const DIARY_F=[["vocab","단어"],["listen","듣기"],["read","독해"],["gram","문법"],["syn","구문해석"],["write","영작"],["etc","기타"]];   /* 서버 DIARY_KEYS와 같은 순서 */
 const DIARY_BASE="수업시간 진도";
-function diaryReset(){clearTimeout((S.diary||{}).t);S.diary={today:null,entries:{},sel:null,saveState:"",savedAt:null,q:null,t:null}}
+function diaryReset(){clearTimeout((S.diary||{}).t);S.diary={today:null,entries:{},sel:null,saveState:"",savedAt:null,q:null,t:null,pin:"",pinAt:0,pinOpen:false,pinMsg:"",pend:null}}
 diaryReset();
 function diaryToday(){return S.diary.today||ymd()}
 function parseYmd(s){const p=String(s).split("-").map(Number);return new Date(p[0],p[1]-1,p[2])}
@@ -431,7 +431,7 @@ async function diaryLoad(){
     D.today=res.today;D.entries={};(res.entries||[]).forEach(e=>{D.entries[e.d]=e});
     /* 바뀐 게 있을 때만 다시 그림 (쓰는 중이거나 '한 번 더 누르면 확정' 안내가 떠 있으면 건드리지 않음) */
     const idle=!isTypingDiary()&&!document.querySelector('[data-act="dconfirm"][data-confirm="1"]');
-    if(before!==JSON.stringify([D.today,D.entries])&&(S.view==="home"||(S.view==="diary"&&idle)))render();
+    if(before!==JSON.stringify([D.today,D.entries])&&(S.view==="home"||S.view==="today"||(S.view==="diary"&&idle&&!D.pinOpen)))render();
     const dr=diaryDraft(D.today);if(dr&&dr.dirty&&!diaryLocked(D.today))diarySaveSoon(500);   /* 못 보낸 글이 있으면 다시 보냄 */
   }catch(e){}
 }
@@ -439,6 +439,55 @@ function diaryFill(fields){const date=diaryToday();if(diaryLocked(date))return;
   lsSet(stuKey("diary_"+date),{f:fields,dirty:true,at:Date.now()});
   DIARY_F.forEach(x=>{const ta=document.getElementById("d_"+x[0]);if(ta)ta.value=fields[x[0]]||""});
   S.diary.saveState="dirty";updateDsave();diarySaveSoon(1000)}
+/* 선생님 확인 (2026-10-19): 항목마다 '확인' 버튼 하나. 확인한 항목은 부모님 문자에서 빠지고, 확인하지 않은 지난 숙제만 '미완료'로 들어간다.
+   학생이 스스로 누르지 못하게 선생님 비밀번호(시트 '설정' B1)를 한 번 입력하면 10분 동안 눌러지고, 확인은 날짜가 지나 잠긴 알림장에도 할 수 있다. */
+function teacherOn(){const D=S.diary;return !!D.pin&&Date.now()-D.pinAt<600000}
+async function diaryCheck(date,keys,on){
+  const D=S.diary,me=S.me;if(!useApi()||!me||!me.token)return;
+  if(!teacherOn()){D.pend={date,keys,on};D.pinOpen=true;render();setTimeout(()=>{const p=document.getElementById("dpin");if(p)p.focus()},50);return}
+  try{
+    const res=await api({act:"diary_check",id:me.id,token:me.token,date,keys,on,pin:D.pin});
+    if(S.me!==me)return;
+    if(!res||!res.ok){
+      if(res&&res.code==="auth"){authFail();return}
+      if(res&&(res.code==="badpin"||res.code==="nopin"||res.code==="pinlocked")){D.pin="";D.pend={date,keys,on};D.pinOpen=true;
+        D.pinMsg=res.code==="badpin"?"비밀번호가 맞지 않아요.":res.code==="pinlocked"?"여러 번 틀렸어요. 10분 뒤에 다시 해 주세요.":"선생님 확인 비밀번호가 아직 없어요. 원장님께 말씀드려 주세요.";render();return}
+      toast("확인하지 못했어요. 다시 눌러 주세요");return}
+    D.pinMsg="";D.entries[res.entry.d]=res.entry;render();
+  }catch(e){toast("인터넷 연결을 확인해 주세요")}
+}
+function diaryPinOk(){const D=S.diary,v=((document.getElementById("dpin")||{}).value||"").trim();
+  if(!v){toast("비밀번호를 써 주세요");return}
+  D.pin=v;D.pinAt=Date.now();D.pinOpen=false;D.pinMsg="";const p=D.pend;D.pend=null;if(p)diaryCheck(p.date,p.keys,p.on);else render()}
+function diaryCheckPanel(e){
+  const D=S.diary,ck=e.ck||[],items=DIARY_F.filter(x=>String(e.f[x[0]]||"").trim());
+  if(!items.length)return "";
+  const left=items.filter(x=>!ck.includes(x[0]));
+  return `<div class="panel"><h2><span class="mark">선생님</span> 확인</h2>
+    <p class="muted small">숙제를 한 항목만 눌러서 확인해요. 확인하지 않은 항목은 부모님 문자에 <b style="color:var(--ink)">미완료</b>로 들어가요.</p>
+    ${D.pinOpen?`<div class="note" style="background:var(--pend-bg);color:var(--pend)"><b>선생님 비밀번호</b>를 써 주세요 (10분 동안 유지돼요)
+      <input type="password" id="dpin" inputmode="numeric" autocomplete="off" maxlength="12" style="margin-top:8px">
+      ${D.pinMsg?`<p class="small" style="color:var(--bad);margin-top:6px"><b>${esc(D.pinMsg)}</b></p>`:""}
+      <div class="row" style="margin-top:8px"><button class="primary grow" data-act="dpinok">확인</button><button class="grow" data-act="dpincancel">취소</button></div></div>`:""}
+    <div class="wlist">${items.map(x=>{const on=ck.includes(x[0]);
+      return `<div style="align-items:center"><span class="dk">${x[1]}</span><span style="flex:1;min-width:0">${br(esc(e.f[x[0]]))}</span>`+
+        (on?`<button class="badge ok" style="min-height:34px;padding:4px 10px;border-color:var(--ok)" data-act="dcheck" data-k="${x[0]}" aria-label="${x[1]} 확인 취소">✓ 확인됨</button>`
+          :`<button style="min-height:34px;padding:4px 14px" data-act="dcheck" data-k="${x[0]}">확인</button>`)+`</div>`}).join("")}</div>
+    ${left.length>1?`<button class="wide" data-act="dcheckall">남은 ${left.length}개 모두 확인</button>`:""}
+  </div>`}
+/* 미완료 숙제: 오늘 이전 알림장(최근 14일)에서 선생님이 확인하지 않은 칸. 오늘 새로 낸 숙제는 아직 기한 전이라 제외 */
+function hwMissing(){const D=S.diary;if(!useApi()||!D.today)return [];
+  const t=diaryToday(),cut=ymd(new Date(Date.now()-14*86400000));
+  return Object.keys(D.entries).filter(d=>d<t&&d>=cut).sort().map(d=>{const e=D.entries[d],ck=e.ck||[];
+    return {d,items:DIARY_F.filter(x=>String(e.f[x[0]]||"").trim()&&!ck.includes(x[0])).map(x=>({label:x[1],text:String(e.f[x[0]]).replace(/\s*\n\s*/g," / ")}))}}).filter(x=>x.items.length)}
+function hwLines(){const m=hwMissing();if(!m.length)return [];
+  const L=["","▶ 미완료 숙제"];m.forEach(x=>{L.push(`[${md(parseYmd(x.d))} 알림장]`);x.items.forEach(i=>L.push(`・${i.label}: ${i.text}`))});return L}
+function hwPanel(){const m=hwMissing();
+  if(!m.length)return S.diary.today?`<div class="note" style="background:var(--ok-bg);color:var(--ok)"><b>✓ 미완료 숙제가 없어요.</b> (최근 14일 알림장 기준)</div>`:"";
+  const n=m.reduce((a,x)=>a+x.items.length,0);
+  return `<div class="panel"><h2>미완료 <span class="mark">숙제</span> ${n}개</h2><p class="muted small">선생님이 확인하지 않은 지난 숙제예요. 부모님 문자에 들어가요.</p>
+    ${m.map(x=>`<div class="stack" style="gap:4px"><p class="small"><b>${md(parseYmd(x.d))} 알림장</b></p><div class="wlist">${x.items.map(i=>`<div><span class="dk">${i.label}</span><span>${br(esc(i.text))}</span></div>`).join("")}</div></div>`).join("")}
+    <button class="wide" data-act="diary" data-v="${m[0].d}">알림장에서 확인하기</button></div>`}
 function vDiary(){
   const D=S.diary,today=diaryToday(),sel=D.sel||today,e=D.entries[sel]||null,locked=diaryLocked(sel),f=diaryFields(sel);
   const dates=[...new Set(Object.keys(D.entries).concat([today]))].sort().reverse().slice(0,14);
@@ -463,7 +512,7 @@ function vDiary(){
       <p class="muted small">선생님께 보여 드릴 때는 확정한 알림장을 보여 줘요.</p></div>`;
   }
   return header()+`<button class="ghost" data-act="home" style="align-self:flex-start">← 목록으로</button>
-  <div class="stack"><h1>내 <span class="mark">알림장</span></h1><p class="muted small">${esc(S.me.name)} · ${dLabel(sel)}</p></div>`+chipsRow+body;
+  <div class="stack"><h1>내 <span class="mark">알림장</span></h1><p class="muted small">${esc(S.me.name)} · ${dLabel(sel)}</p></div>`+chipsRow+body+(e?diaryCheckPanel(e):"");
 }
 /* 앱 설치 (2026-10-13 앱 버전): 안드로이드 크롬은 설치 창을 바로 띄우고, 나머지는 순서 안내 */
 let installEvt=null;
@@ -538,6 +587,7 @@ function todayText(){
     lines.push(`■ ${TYPES[x.type]||x.type} · ${x.bookName}${x.unitName?" "+x.unitName:""}`);
     lines.push(`  ${x.tries.map(t=>t.pct).join(" → ")}점 (${x.tries.length}회) · ${st}${x.away?" · "+awayTxt(x.away,x.awaySec):""}`);
     if(!x.passed&&x.last.wrong&&x.last.wrong.length)lines.push("  다시 외울 단어: "+x.last.wrong.join(", "))});
+  hwLines().forEach(l=>lines.push(l));
   lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험(3회)으로 다시 확인합니다.");
   return lines.join("\n");
 }
@@ -572,6 +622,7 @@ function weekText(){
         lines.push(`■ ${TYPES[x.type]||x.type} · ${x.bookName}${x.unitName?" "+x.unitName:""}`);
         if(x.h)lines.push(`  첫 시험 ${x.h.pct}점${x.h.pass&&x.h.retryPassed?` → 재시험 ${x.h.retryPassed}회 만에`:""} · ${st}`);
         else lines.push(`  ${x.tries.map(t=>t.pct).join(" → ")}점 (${x.tries.length}회) · ${st}${x.away?" · "+awayTxt(x.away,x.awaySec):""}`)})})}
+  hwLines().forEach(l=>lines.push(l));
   lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험(3회)으로 다시 확인합니다.");
   return lines.join("\n");
 }
@@ -620,11 +671,12 @@ function vToday(){
       ${rk?`<div class="small" style="color:var(--pend)"><b>눌러서 틀린 문제·해설 보기 ›</b></div>`:""}</div>
       <span class="badge ${x.passed?"ok":x.final?"pend":"bad"}">${x.passed?"통과":x.final?"조교 확인":"재시험 중"}</span></${rk?"button":"div"}>`}).join("")}</div>`
   :`<div class="panel"><div class="empty">오늘 본 시험이 아직 없어요.</div></div>`}
+  ${useApi()?hwPanel():""}
   ${useApi()?syncNote():(gs.length?`<a class="linkbtn" href="${esc(submitUrl())}" target="_blank" rel="noopener" data-act="sent">원장님께 제출하기</a>
   ${(()=>{const t=lsGet(stuKey("sent_"+dayKey()),null);return t?`<p class="small ok-t" style="margin-top:-8px"><b>✓ 오늘 ${esc(t)}에 제출했어요.</b> 공부를 더 했으면 한 번 더 눌러요.</p>`
     :`<p class="muted small" style="margin-top:-8px">누르면 바로 원장님께 가요. 새 창에 "응답이 기록되었습니다"가 뜨면 끝이에요. 오늘 공부를 다 끝낸 뒤 눌러요.</p>`})()}`
   :`<span class="linkbtn off" aria-disabled="true">원장님께 제출하기</span>`)}
-  <button class="wide" data-act="sharetoday" ${gs.length?"":"disabled"}>부모님께 카톡으로 보내기</button>
+  <button class="wide" data-act="sharetoday" ${gs.length||hwMissing().length?"":"disabled"}>부모님께 카톡으로 보내기</button>
   <button class="wide" data-act="shareweek">최근 7일 기록 부모님께 보내기</button>
   <p class="muted small" style="margin-top:-8px">집에서 하루씩 공부하는 학생은 일주일에 한 번 이 버튼으로 모아서 보내도 돼요.</p>
   ${S.shareBox?`<div class="panel"><p class="muted small">아래 글을 길게 눌러 복사한 뒤 카톡에 붙여 넣으세요.</p><div class="copybox" id="tb">${esc(S.shareText||todayText())}</div></div>`:""}
@@ -1053,6 +1105,7 @@ app.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&e.target.id==="sp"){e.preventDefault();doSpell()}
   if(e.key==="Enter"&&e.target.id==="fl"){e.preventDefault();doFill()}
   if(e.key==="Enter"&&e.target.id==="nm"){e.preventDefault();enter()}
+  if(e.key==="Enter"&&e.target.id==="dpin"){e.preventDefault();diaryPinOk()}
   if(e.key==="Enter"&&(e.target.id==="lpw"||e.target.id==="lid")){e.preventDefault();if(e.target.id==="lid"){const p=document.getElementById("lpw");if(p)p.focus()}else doLogin()}
   if((e.key==="Enter"||e.key===" ")&&e.target.dataset&&e.target.dataset.act==="flip"){e.preventDefault();S.cards.flip=!S.cards.flip;render()}
 });
@@ -1092,7 +1145,12 @@ app.addEventListener("click",async e=>{
     case "login":doLogin();break;
     case "pickid":{const x=lsGet("mj_ids",[])[Number(v)];if(x){S.loginId=x;S.loginMsg="";render();const p=document.getElementById("lpw");if(p)p.focus()}break;}
     case "syncnow":sync();break;
-    case "diary":{S.diary.sel=null;S.view="diary";render();window.scrollTo(0,0);diaryLoad();break;}
+    case "diary":{S.diary.sel=v||null;S.view="diary";render();window.scrollTo(0,0);diaryLoad();break;}
+    case "dcheck":{const date=S.diary.sel||diaryToday(),e=S.diary.entries[date],k=el.dataset.k;if(!e)return;diaryCheck(date,[k],!(e.ck||[]).includes(k));break;}
+    case "dcheckall":{const date=S.diary.sel||diaryToday(),e=S.diary.entries[date];if(!e)return;
+      const ks=DIARY_F.filter(x=>String(e.f[x[0]]||"").trim()&&!(e.ck||[]).includes(x[0])).map(x=>x[0]);if(ks.length)diaryCheck(date,ks,true);break;}
+    case "dpinok":diaryPinOk();break;
+    case "dpincancel":S.diary.pinOpen=false;S.diary.pend=null;S.diary.pinMsg="";render();break;
     case "ddate":S.diary.sel=v;render();break;
     case "dchip":{const k=el.dataset.k,c=diaryChips(k)[Number(v)],ta=document.getElementById("d_"+k);if(c&&ta){ta.value=c;diaryInput(k,c)}break;}
     case "dprev":{const date=diaryToday(),p=diaryPrev(date);if(!p)return;const src=S.diary.entries[p].f||{},cur=Object.assign({},diaryFields(date));let n=0;
@@ -1113,7 +1171,7 @@ app.addEventListener("click",async e=>{
     case "home":goHome();break;
     case "review":if(v)openReview(v);break;
     case "a2hs":doInstall();break;
-    case "today":S.shareBox=false;S.shareText="";S.view="today";render();window.scrollTo(0,0);break;
+    case "today":S.shareBox=false;S.shareText="";S.view="today";render();window.scrollTo(0,0);diaryLoad();break;
     case "sharetoday":await shareText(todayText());break;
     case "shareweek":await shareText(weekText());break;
     case "sent":lsSet(stuKey("sent_"+dayKey()),hm(new Date().toISOString()));setTimeout(()=>{if(S.view==="today")render()},300);break;
