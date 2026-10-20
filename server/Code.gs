@@ -22,9 +22,10 @@ var MAX_FAIL = 10;          // 비밀번호 10번 틀리면 10분 잠금
 
 /* 알림장 (2026-10-19) */
 var SHEET_DIARY = "알림장";
-var DIARY_HEAD = ["날짜", "아이디", "이름", "단어", "듣기", "독해", "문법", "구문해석", "영작", "기타", "상태", "확정 시각", "마지막 수정", "완료 확인", "확인 시각"];
+var DIARY_HEAD = ["날짜", "아이디", "이름", "단어", "듣기", "독해", "문법", "구문해석", "영작", "기타", "상태", "확정 시각", "마지막 수정", "완료 확인", "확인 시각", "미완료"];
 var DIARY_LABELS = DIARY_HEAD.slice(3, 10);   // 단어 ~ 기타 (칸 이름)
-var DIARY_BODY = 13;        // 학생이 쓰는 부분(A~M열). N~O열은 선생님 확인(완료 확인한 칸 이름, 확인 시각)
+var DIARY_BODY = 13;        // A~M열(예전 학생 입력부). N~P열은 선생님 검사(완료 칸 이름, 검사 시각, 미완료 칸 이름)
+var ST_CHECK = "검사";      // 선생님 검사로 만들어진 줄
 var SHEET_SET = "설정";     // B1 = 선생님 확인 비밀번호
 var DIARY_KEYS = ["vocab", "listen", "read", "gram", "syn", "write", "etc"];   // 시트 D~J열과 같은 순서 (앱 DIARY_F와 같게)
 var DIARY_MAX = 300;        // 칸 하나에 쓸 수 있는 글자 수
@@ -67,7 +68,7 @@ function 처음설정() {
   var dy = ss.getSheetByName(SHEET_DIARY);
   if (!dy) {
     dy = ss.insertSheet(SHEET_DIARY);
-    dy.getRange("A:O").setNumberFormat("@");   // 전부 글자로 저장(=로 시작하는 글이 수식이 되지 않게)
+    dy.getRange("A:P").setNumberFormat("@");   // 전부 글자로 저장(=로 시작하는 글이 수식이 되지 않게)
     dy.appendRow(DIARY_HEAD);
     dy.setFrozenRows(1);
   }
@@ -182,7 +183,7 @@ function ckText_(keys) {
 function entryOf_(v) {
   var f = {};
   for (var k = 0; k < DIARY_KEYS.length; k++) f[DIARY_KEYS[k]] = String(v[3 + k] == null ? "" : v[3 + k]);
-  return { d: dstr_(v[0]), f: f, st: String(v[10] || ST_DRAFT), conf: tstr_(v[11]), upd: tstr_(v[12]), ck: parseCk_(v[13]), ckt: tstr_(v[14]) };
+  return { d: dstr_(v[0]), f: f, st: String(v[10] || ST_DRAFT), conf: tstr_(v[11]), upd: tstr_(v[12]), ck: parseCk_(v[13]), ckt: tstr_(v[14]), nk: parseCk_(v[15]) };
 }
 /* 선생님 확인 비밀번호: 시트 '설정' B1. 10번 틀리면 그 학생 계정에서 10분 동안 막음 */
 function pinCheck_(me, pin) {
@@ -212,29 +213,34 @@ function diary_(me, q) {
   lock.waitLock(25000);
   try {
     var sh = sheet_(SHEET_DIARY), today = todayKst_();
-    if (String(sh.getRange(1, 14).getValue() || "") !== DIARY_HEAD[13]) {   // 예전 시트에는 N~O열 제목을 붙임
-      sh.getRange("N:O").setNumberFormat("@");
-      sh.getRange(1, 14, 1, 2).setValues([[DIARY_HEAD[13], DIARY_HEAD[14]]]);
+    if (String(sh.getRange(1, 16).getValue() || "") !== DIARY_HEAD[15]) {   // 예전 시트에는 N~P열 제목을 붙임
+      sh.getRange("N:P").setNumberFormat("@");
+      sh.getRange(1, 14, 1, 3).setValues([[DIARY_HEAD[13], DIARY_HEAD[14], DIARY_HEAD[15]]]);
     }
     var win = diaryWindow_(sh);
     sweepDiary_(sh, win, today);
     if (q.act === "diary_get") return { ok: true, today: today, entries: diaryList_(win, me.id) };
-    if (q.act === "diary_check") {          // 선생님이 숙제를 한 칸을 확인(또는 취소). 날짜가 지나 잠긴 알림장도 확인할 수 있음
+    if (q.act === "diary_check") {          // 선생님 검사 (2026-10-20): 칸 하나를 완료(ok)·미완료(no)·지움("")으로. 지난 날짜도 됨. 줄이 없으면 만듦
       var bad = pinCheck_(me, q.pin);
       if (bad) return bad;
-      var d2 = String(q.date || ""), i2 = /^\d{4}-\d{2}-\d{2}$/.test(d2) ? diaryFind_(win, me.id, d2) : -1;
-      if (i2 < 0) return { ok: false, code: "none" };
-      var v2 = win.vals[i2], cur = parseCk_(v2[13]), ks = Array.isArray(q.keys) ? q.keys : [];
-      for (var j = 0; j < ks.length; j++) {
-        var kk = DIARY_KEYS.indexOf(ks[j]);
-        if (kk < 0 || String(v2[3 + kk] || "").trim() === "") continue;   // 내용이 있는 칸만
-        var at = cur.indexOf(ks[j]);
-        if (q.on && at < 0) cur.push(ks[j]);
-        else if (!q.on && at >= 0) cur.splice(at, 1);
+      var d2 = String(q.date || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d2)) return { ok: false, code: "date" };
+      if (d2 > today) return { ok: false, code: "future" };
+      var kk = DIARY_KEYS.indexOf(String(q.key || ""));
+      if (kk < 0) return { ok: false, code: "key" };
+      var st2 = q.state === "ok" ? "ok" : q.state === "no" ? "no" : "";
+      var i2 = diaryFind_(win, me.id, d2), v2, r2;
+      if (i2 >= 0) { v2 = win.vals[i2]; r2 = win.first + i2; }
+      else {
+        v2 = [d2, me.id, me.name, "", "", "", "", "", "", "", ST_CHECK, "", nowKst_(), "", "", ""];
+        r2 = sh.getLastRow() + 1;
+        sh.getRange(r2, 1, 1, DIARY_BODY).setValues([v2.slice(0, DIARY_BODY)]);
       }
-      var tm = nowKst_();
-      v2[13] = ckText_(cur); v2[14] = tm;
-      sh.getRange(win.first + i2, 14, 1, 2).setValues([[v2[13], tm]]);
+      var ck2 = parseCk_(v2[13]), nk2 = parseCk_(v2[15]), key2 = DIARY_KEYS[kk];
+      ck2 = ck2.filter(function (x) { return x !== key2; }); nk2 = nk2.filter(function (x) { return x !== key2; });
+      if (st2 === "ok") ck2.push(key2); else if (st2 === "no") nk2.push(key2);
+      v2[13] = ckText_(ck2); v2[14] = nowKst_(); v2[15] = ckText_(nk2);
+      sh.getRange(r2, 14, 1, 3).setValues([[v2[13], v2[14], v2[15]]]);
       return { ok: true, entry: entryOf_(v2) };
     }
     var date = String(q.date || "");
@@ -253,7 +259,7 @@ function diary_(me, q) {
     var r = idx >= 0 ? win.first + idx : sh.getLastRow() + 1;
     sh.getRange(r, 1, 1, DIARY_BODY).setValues([row]);           // 선생님 확인 열(N~O)은 건드리지 않음
     if (newCk.length !== oldCk.length) sh.getRange(r, 14).setValue(ckText_(newCk));
-    return { ok: true, entry: entryOf_(row.concat([ckText_(newCk), idx >= 0 ? win.vals[idx][14] : ""])) };
+    return { ok: true, entry: entryOf_(row.concat([ckText_(newCk), idx >= 0 ? win.vals[idx][14] : "", idx >= 0 ? win.vals[idx][15] : ""])) };
   } finally {
     lock.releaseLock();
   }
