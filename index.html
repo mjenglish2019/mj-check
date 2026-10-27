@@ -200,7 +200,7 @@ const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t){return PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-20a";
+const BUILD="2026-10-27a";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -363,6 +363,7 @@ setInterval(()=>{if(useApi()&&S.me&&S.diary.today&&ymd()>S.diary.today)diaryLoad
    칸 하나에 버튼 하나: 한 번 누르면 ✓ 완료, 두 번 누르면 ✗ 미완료, 세 번 누르면 지워짐(숙제가 없던 칸).
    ✗ 미완료만 부모님 문자에 들어간다. 학생이 스스로 누르지 못하게 선생님 비밀번호(시트 '설정' B1)를 한 번 입력하면 10분 동안 유지.
    서버(알림장 시트)에 날짜·학생마다 한 줄(N 완료, O 검사 시각, P 미완료). 지난 날짜도 검사할 수 있다. */
+const DIARY_ON=false;   /* 2026-10-27 원장님 요청으로 알림장 숨김. true로 바꾸면 다시 보임 */
 const DIARY_F=[["vocab","단어"],["listen","듣기"],["read","독해"],["gram","문법"],["syn","구문해석"],["write","영작"]];   /* 서버 DIARY_KEYS와 같은 이름 */
 function diaryReset(){S.diary={today:null,entries:{},sel:null,pin:"",pinAt:0,pinOpen:false,pinMsg:"",pend:null,busy:""}}
 diaryReset();
@@ -375,9 +376,9 @@ function ckLabels(keys){return DIARY_F.filter(x=>(keys||[]).includes(x[0])).map(
 function diaryBadge(){const e=S.diary.entries[diaryToday()];
   if(!ckDone(e))return `<span class="badge none">검사 전</span>`;
   const n=(e.nk||[]).length;return n?`<span class="badge bad">미완료 ${n}</span>`:`<span class="badge ok">모두 완료</span>`}
-function diaryCard(){return `<button class="todaybtn" data-act="diary"><span>내 알림장</span>${diaryBadge()}</button>`}
+function diaryCard(){if(!DIARY_ON)return "";return `<button class="todaybtn" data-act="diary"><span>내 알림장</span>${diaryBadge()}</button>`}
 async function diaryLoad(){
-  const D=S.diary,me=S.me;if(!useApi()||!me||!me.token)return;
+  const D=S.diary,me=S.me;if(!DIARY_ON||!useApi()||!me||!me.token)return;
   try{
     const res=await api({act:"diary_get",id:me.id,token:me.token});
     if(S.me!==me)return;
@@ -431,12 +432,12 @@ function vDiary(){
 }
 /* 부모님 문자에 들어갈 미완료 숙제: 그 날 선생님이 ✗로 표시한 칸 */
 function hwNo(d){const e=S.diary.entries[d];return e?ckLabels(e.nk):[]}
-function hwLines(days){if(!useApi()||!S.diary.today)return [];
+function hwLines(days){if(!DIARY_ON||!useApi()||!S.diary.today)return [];
   const t=diaryToday();
   if(!days){const no=hwNo(t);return no.length?["",`▶ 미완료 숙제: ${no.join(", ")}`]:[]}
   const L=[];for(let i=days-1;i>=0;i--){const d=ymd(new Date(parseYmd(t).getTime()-i*86400000)),no=hwNo(d);if(no.length)L.push(`・${md(parseYmd(d))}: ${no.join(", ")}`)}
   return L.length?["","▶ 미완료 숙제"].concat(L):[]}
-function hwPanel(){const D=S.diary;if(!D.today)return "";const e=D.entries[diaryToday()];
+function hwPanel(){const D=S.diary;if(!DIARY_ON||!D.today)return "";const e=D.entries[diaryToday()];
   if(!ckDone(e))return `<div class="note">오늘 숙제는 아직 검사 전이에요. <span class="muted">선생님이 알림장에서 검사하면 미완료 숙제가 문자에 들어가요.</span></div>`;
   const no=ckLabels(e.nk);
   return no.length?`<div class="note" style="background:var(--bad-bg);color:var(--bad)"><b>✗ 미완료 숙제 ${no.length}개: ${no.join(", ")}</b> · 부모님 문자에 들어가요.</div>`
@@ -1070,7 +1071,7 @@ app.addEventListener("click",async e=>{
     case "login":doLogin();break;
     case "pickid":{const x=lsGet("mj_ids",[])[Number(v)];if(x){S.loginId=x;S.loginMsg="";render();const p=document.getElementById("lpw");if(p)p.focus()}break;}
     case "syncnow":sync();break;
-    case "diary":{S.diary.sel=v||null;S.view="diary";render();window.scrollTo(0,0);diaryLoad();break;}
+    case "diary":{if(!DIARY_ON)return;S.diary.sel=v||null;S.view="diary";render();window.scrollTo(0,0);diaryLoad();break;}
     case "dcheck":{const date=S.diary.sel||diaryToday();if(S.diary.busy)return;diaryCheck(date,el.dataset.k,v||"");break;}
     case "dpinok":diaryPinOk();break;
     case "dpincancel":S.diary.pinOpen=false;S.diary.pend=null;S.diary.pinMsg="";render();break;
