@@ -88,6 +88,8 @@ button.wide{width:100%}
 .fb.ok{background:var(--ok-bg);color:var(--ok)}
 .fb.bad{background:var(--bad-bg);color:var(--bad)}
 .fb .exp{color:var(--ink)}
+.passage.ipass{max-height:52vh;font-size:17px}
+.passage .blank{display:inline-block;min-width:3.2em;border-bottom:2.5px solid var(--ink);margin-inline:2px}
 .passage{font-family:var(--f-word);font-size:18px;line-height:1.7;max-height:42vh;overflow:auto;padding:14px;border-radius:12px;background:var(--paper);border:1px solid var(--line)}
 .card{min-height:250px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;cursor:pointer;user-select:none}
 .card .w{font-family:var(--f-word);font-size:44px;font-weight:600;line-height:1.1;word-break:break-word}
@@ -197,10 +199,10 @@ function booksFor(t){return t==="naesin"?books(t).filter(b=>b.school===S.sel.nae
 function findBook(id){return S.full[id]||(S.content.books||[]).find(b=>b.id===id)}
 /* 시험마다 뽑는 문항 수: 문법 20(은행 전부, 순서만 랜덤), 독해 10(지문당 10문항 전부) — 2026-10-12 원장님 결정 */
 const PICK_BY={grammar:20,reading:10,naesin:20};
-function pickOf(t){return PICK_BY[t]||10}
+function pickOf(t,b){return (b&&b.pick)||PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-27a";
+const BUILD="2026-10-28a";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -235,7 +237,11 @@ function blankify(q){return ul(esc(q).replace(/_{2,}/g,'<span class="blank"></sp
 function fmtDate(iso){const d=new Date(iso);if(isNaN(d))return "";return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
 let toastT;function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},2200)}
 function speak(w){try{const u=new SpeechSynthesisUtterance(w);u.lang="en-US";u.rate=.9;speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){toast("이 기기에서는 발음 듣기가 안 돼요")}}
-function carry(it){return it.kind==="fill"?{kind:"fill",prompt:it.prompt,ctx:it.ctx,hint:it.hint,s:it.s,answers:it.answers,exp:it.exp}:{prompt:it.prompt,choices:it.choices,answer:it.answer,exp:it.exp}}
+function carry(it){const c=it.kind==="fill"?{kind:"fill",prompt:it.prompt,ctx:it.ctx,hint:it.hint,s:it.s,answers:it.answers,exp:it.exp}:{prompt:it.prompt,choices:it.choices,answer:it.answer,exp:it.exp};
+  if(it.passage)c.passage=it.passage;if(it.no)c.no=it.no;return c}
+/* 문항별 지문 (미니 모의고사, 2026-10-28): \n 줄바꿈 · [밑줄] · ___ 빈칸 */
+function ipass(h){return br(blankify(String(h).replace(/\( ([①②③④⑤]) \)/g,"(\u00a0$1\u00a0)")))}
+function chTxt(c,i){return c===NUM[i]?"":c}
 function normFill(s){s=String(s).toLowerCase().replace(/[’‘`]/g,"'").replace(/[“”]/g,'"');
   s=s.replace(/\bcan't\b/g,"cannot").replace(/\bwon't\b/g,"will not").replace(/\bshan't\b/g,"shall not").replace(/n't\b/g," not").replace(/\bcan not\b/g,"cannot")
    .replace(/'m\b/g," am").replace(/'re\b/g," are").replace(/'ve\b/g," have").replace(/'ll\b/g," will");
@@ -638,7 +644,7 @@ function vHome(){
       ${!list.length?`<div class="empty">등록된 ${TYPES[t]} 교재가 없어요. 원장님께 말씀드려 주세요.</div>`
         :`<select id="bk" data-act="book">${list.map(x=>`<option value="${esc(x.id)}" ${x.id===sel?"selected":""}>${esc(x.name)}</option>`).join("")}</select>`}
     </div>
-    ${b?`<div class="units">${b.units.map(u=>{const key=b.id+"/"+u.id;return `<button class="unit" data-act="unit" data-v="${esc(u.id)}"><span class="name">${esc(u.name)}</span><span class="cnt">${t==="vocab"?unitCount(u)+"단어":Math.min(pickOf(t),unitCount(u))+"문항"}</span>${unitBadge(key,t)}</button>`}).join("")}</div>`:""}
+    ${b?`<div class="units">${b.units.map(u=>{const key=b.id+"/"+u.id;return `<button class="unit" data-act="unit" data-v="${esc(u.id)}"><span class="name">${esc(u.name)}</span><span class="cnt">${t==="vocab"?unitCount(u)+"단어":Math.min(pickOf(t,b),unitCount(u))+"문항"}</span>${unitBadge(key,t)}</button>`}).join("")}</div>`:""}
     ${t==="vocab"?(()=>{const n=wrongBook().length;return `<button class="wide" data-act="tab" data-v="wrong">내 오답 단어장 <span class="badge ${n?"bad":"none"}">${n}개</span></button>`})():""}`;
   }
   const tn=todayGroups().length;
@@ -707,11 +713,11 @@ function vQuiz(){
       ${fb?"":`<button class="primary" data-act="spell">확인</button>`}</div>`;
   }else{
     const isWord=it.kind==="mean";
-    main=`<div class="panel">${q.passage?`<div class="passage">${esc(q.passage)}</div>`:""}
+    main=`<div class="panel">${it.passage?`<div class="passage ipass">${ipass(it.passage)}</div>`:q.passage?`<div class="passage">${esc(q.passage)}</div>`:""}
       ${isWord?`<p class="muted small">알맞은 뜻을 고르세요.</p>`:""}
-      <div class="prompt ${isWord?"word":(it.prompt.length>90?"long":"")}">${isWord?esc(it.prompt):br(blankify(it.prompt))}</div>
+      <div class="prompt ${isWord?"word":(it.prompt.length>90?"long":"")}">${it.no?`<b>${it.no}.</b> `:""}${isWord?esc(it.prompt):br(blankify(it.prompt))}</div>
       <div class="choices">${it.choices.map((c,i)=>{let cls="";if(fb){if(i===it.answer)cls="right";else if(i===q.picked)cls="wrong"}
-        return `<button class="choice ${cls}" data-act="pick" data-v="${i}" ${fb?"disabled":""}><span class="n">${NUM[i]}</span><span>${isWord?esc(c):ul(esc(c))}</span></button>`}).join("")}</div></div>`;
+        return `<button class="choice ${cls}" data-act="pick" data-v="${i}" ${fb?"disabled":""}><span class="n">${NUM[i]}</span><span>${isWord?esc(c):ul(esc(chTxt(c,i)))}</span></button>`}).join("")}</div></div>`;
   }
   let fbh="";
   if(fb){
@@ -737,16 +743,16 @@ function vReview(){
   let body="";
   if(l.type==="vocab")body=`<div class="panel"><div class="wlist">${items.map(x=>`<div><span class="en">${esc(x.w)}</span><span>${esc(x.m)}</span></div>`).join("")}</div></div>`;
   else body=(m.passage?`<div class="panel"><p class="muted small">지문</p><div class="passage" style="max-height:none">${esc(m.passage)}</div></div>`:"")+
-    items.map((it,i)=>it.kind==="fill"
+    items.map((it,i)=>(it.passage&&(i===0||items[i-1].passage!==it.passage)?`<div class="panel"><p class="muted small">지문</p><div class="passage" style="max-height:none">${ipass(it.passage)}</div></div>`:"")+(it.kind==="fill"
       ?`<div class="panel"><p class="muted small">${i+1}. ${esc(it.prompt)}</p>
         ${it.ctx?`<div class="prompt ${it.ctx.length>90?"long":""}">${br(esc(it.ctx))}</div>`:""}
         ${it.hint?`<p class="small"><b>조건</b> ${esc(it.hint)}</p>`:""}
         <div class="endp" style="line-height:1.6">${blankify(it.s)}</div>
         <div class="fb ok"><b>정답: ${esc((it.answers||[]).join(" / "))}</b>${it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}</div></div>`
-      :`<div class="panel"><p class="muted small">${i+1}번</p>
+      :`<div class="panel"><p class="muted small">${it.no?it.no+"번":(i+1)+"번"}</p>
         <div class="prompt ${String(it.prompt).length>90?"long":""}">${br(blankify(it.prompt))}</div>
-        <div class="choices">${(it.choices||[]).map((c,j)=>`<div class="choice ${j===it.answer?"right":""}" style="border:1.5px solid var(--line);border-radius:10px;padding:11px 14px;${j===it.answer?"border-color:var(--ok)":""}"><span class="n">${NUM[j]}</span><span>${ul(esc(c))}</span></div>`).join("")}</div>
-        <div class="fb ok"><b>정답: ${NUM[it.answer]||""} ${ul(esc((it.choices||[])[it.answer]||""))}</b>${it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}</div></div>`).join("");
+        <div class="choices">${(it.choices||[]).map((c,j)=>`<div class="choice ${j===it.answer?"right":""}" style="border:1.5px solid var(--line);border-radius:10px;padding:11px 14px;${j===it.answer?"border-color:var(--ok)":""}"><span class="n">${NUM[j]}</span><span>${ul(esc(chTxt(c,j)))}</span></div>`).join("")}</div>
+        <div class="fb ok"><b>정답: ${NUM[it.answer]||""} ${ul(esc(chTxt((it.choices||[])[it.answer]||"",it.answer)))}</b>${it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}</div></div>`)).join("");
   return header()+back+head+body+`<button class="wide" data-act="today">오늘 본 시험 보기</button>`;
 }
 function vResult(){
@@ -897,7 +903,7 @@ function tryStart(type,b,u){
   if(l&&l.state==="final"){openReview(k);return}
   if(l&&l.state==="started"&&l.items){toast(l.retryNo?`재시험 ${l.retryNo}/${MAXRETRY}을 다시 봐요`:"보던 시험을 처음부터 다시 봐요");launch(type,meta,l.items,l.retryNo||0);return}
   if(l&&l.state==="open"&&l.items){const n=(l.retryNo||0)+1;toast(`재시험 ${n}/${MAXRETRY}을 봐요`);launch(type,meta,l.items,n);return}
-  const items=type==="vocab"?u.items:shuffle(u.items).slice(0,pickOf(type)).map(x=>x.a?{kind:"fill",prompt:x.q,ctx:x.ctx||"",hint:x.hint||"",s:x.s,answers:x.a,exp:x.exp}:{prompt:x.q,choices:x.choices,answer:x.answer,exp:x.exp});
+  const items=type==="vocab"?u.items:(b.ordered?u.items.slice():shuffle(u.items)).slice(0,pickOf(type,b)).map(x=>{const o=x.a?{kind:"fill",prompt:x.q,ctx:x.ctx||"",hint:x.hint||"",s:x.s,answers:x.a,exp:x.exp}:{prompt:x.q,choices:x.choices,answer:x.answer,exp:x.exp};if(x.passage)o.passage=x.passage;if(x.no)o.no=x.no;return o});
   launch(type,meta,items,0);
 }
 function startVocabTest(words,meta){
@@ -939,7 +945,7 @@ function next(){
 }
 
 function finish(){
-  const q=S.quiz,total=q.items.length,pct=Math.round(q.correct/total*100),ps=passOf(q.type);
+  const q=S.quiz,total=q.items.length,pct=Math.round(q.correct/total*100),bk=q.wrongMode?null:findBook(q.bookId),ps=(bk&&bk.pass)||passOf(q.type);
   const pass=pct>=ps;
   const wrong=q.type==="vocab"?q.wrong.map(it=>it.src):q.wrong.map(it=>it.kind==="arrange"||it.kind==="write"?{q:it.ko,a:it.model,src:it}:it.kind==="fill"?{q:(it.ctx?it.ctx+" → ":"")+it.s,a:it.answers[0],src:it}:{q:it.prompt,a:it.choices[it.answer],src:it});
   const pending=(q.pending||[]).map(p=>({q:p.it.ko,a:p.it.model,typed:p.typed,src:p.it}));
@@ -1107,7 +1113,7 @@ app.addEventListener("click",async e=>{
     case "cardyes":case "cardno":{const c=S.cards;if(act==="cardno")c.unknown.push(c.list[c.i]);c.i++;c.flip=false;render();break;}
     case "vtest":{const b=findBook(S.sel.vocab),u=findUnit(b,S.sel.unit);tryStart("vocab",b,u);break;}
     case "wrongtest":{const wb=wrongBook();if(!wb.length)return;startVocabTest(wb,{title:"오답 단어장",bookId:"wrong",bookName:"오답 단어장",unitId:"wrong",unitName:"",wrongMode:true,unitItems:wb.length>=4?wb:null});break;}
-    case "pick":{const q=S.quiz;if(q.fb)return;const it=q.items[q.i];const i=Number(v);answer(i===it.answer,(it.kind==="mean"?"":NUM[it.answer]+" ")+it.choices[it.answer],i);break;}
+    case "pick":{const q=S.quiz;if(q.fb)return;const it=q.items[q.i];const i=Number(v);answer(i===it.answer,it.kind==="mean"?it.choices[it.answer]:(NUM[it.answer]+" "+chTxt(it.choices[it.answer],it.answer)).trim(),i);break;}
     case "spell":doSpell();break;
     case "fill":doFill();break;
     case "tok":{const q=S.quiz;if(q.fb)return;q.order=(q.order||[]).concat(Number(v));render();break;}
