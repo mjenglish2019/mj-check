@@ -216,7 +216,7 @@ const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t,b){return (b&&b.pick)||PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-29c";
+const BUILD="2026-10-29e";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -728,10 +728,10 @@ function vQuiz(){
       <input type="text" id="sp" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="영어로 쓰기" ${fb?"disabled":""} value="${esc(q.typed||"")}">
       ${fb?"":`<button class="primary" data-act="spell">확인</button>`}</div>`;
   }else{
-    const isWord=it.kind==="mean";
+    const isWord=it.kind==="mean"||it.kind==="word";
     main=`<div class="panel">${it.passage?`<div class="passage ipass">${ipass(it.passage)}</div>`:q.passage?`<div class="passage">${esc(q.passage)}</div>`:""}
-      ${isWord?`<p class="muted small">알맞은 뜻을 고르세요.</p>`:""}
-      <div class="prompt ${isWord?"word":(it.prompt.length>90?"long":"")}">${it.no?`<b>${it.no}.</b> `:""}${isWord?esc(it.prompt):br(blankify(it.prompt))}</div>
+      ${isWord?`<p class="muted small">${it.kind==="word"?"뜻에 맞는 영어 단어를 고르세요.":"알맞은 뜻을 고르세요."}</p>`:""}
+      <div class="prompt ${it.kind==="mean"?"word":isWord?"":(it.prompt.length>90?"long":"")}">${it.no?`<b>${it.no}.</b> `:""}${isWord?esc(it.prompt):br(blankify(it.prompt))}</div>
       <div class="choices">${it.choices.map((c,i)=>{let cls="";if(fb){if(showAns(q)){if(i===it.answer)cls="right";else if(i===q.picked)cls="wrong"}else if(i===q.picked)cls=fb.ok?"right":"wrong"}
         return `<button class="choice ${cls}" data-act="pick" data-v="${i}" ${fb?"disabled":""}><span class="n">${NUM[i]}</span><span>${isWord?esc(c):ul(esc(chTxt(c,i)))}</span></button>`}).join("")}</div></div>`;
   }
@@ -901,7 +901,12 @@ function vocabItems(words,pool){
       vLastPos[x.w]=ch.indexOf(x.m);
       return {kind:"mean",prompt:x.w,choices:ch,answer:ch.indexOf(x.m),src:x};
     }
-    return {kind:"spell",prompt:x.m,answer:x.w,src:x};
+    /* 철자 쓰기 대신 '뜻 보고 영어 단어 고르기' (2026-10-29 원장님: 자동완성으로 베끼는 문제) */
+    const ow=shuffle([...new Set(pool.filter(y=>y.m!==x.m&&y.w!==x.w).map(y=>y.w))]).slice(0,3);
+    let cw=shuffle([x.w].concat(ow));
+    for(let t=0;cw.length>1&&vLastPos["w:"+x.w]===cw.indexOf(x.w)&&t<10;t++)cw=shuffle(cw);
+    vLastPos["w:"+x.w]=cw.indexOf(x.w);
+    return {kind:"word",prompt:x.m,choices:cw,answer:cw.indexOf(x.w),src:x};
   });
 }
 function allVocabPool(){let p=[];Object.values(S.full).filter(b=>b.type==="vocab").forEach(b=>b.units.forEach(u=>p=p.concat(u.items||[])));return p}
@@ -914,7 +919,9 @@ function launch(type,meta,items,retryNo){
     setLock(k,{state:"started",type,retryNo,items,meta,away:aw,awaySec:as,quitAt:qa,qDone:qa})}
   sync();
   if(type==="vocab"){startVocabTest(items,Object.assign({},meta,{retry:retryNo>0,retryNo}));return}
-  S.quiz={type,items:items.map(x=>Object.assign({kind:"mc"},x)),i:0,correct:0,wrong:[],fb:null,title:meta.title,bookId:meta.bookId,bookName:meta.bookName,
+  /* 문법·독해 재시험은 문제 순서를 섞음(앞 시험과 다른 순서, 보기 순서는 그대로) (2026-10-29 원장님) */
+  let its=items;if(retryNo>0&&items.length>1){const kf=a=>a.map(x=>x.prompt+"|"+(x.s||"")).join("\n");its=shuffle(items);for(let t=0;kf(its)===kf(items)&&t<10;t++)its=shuffle(items)}
+  S.quiz={type,items:its.map(x=>Object.assign({kind:"mc"},x)),i:0,correct:0,wrong:[],fb:null,title:meta.title,bookId:meta.bookId,bookName:meta.bookName,
     unitId:meta.unitId,unitName:meta.unitName,passage:meta.passage||"",retry:retryNo>0,retryNo};
   awayInit(S.quiz);S.view="quiz";render();window.scrollTo(0,0);
 }
@@ -1141,7 +1148,7 @@ app.addEventListener("click",async e=>{
     case "cardyes":case "cardno":{const c=S.cards;if(act==="cardno")c.unknown.push(c.list[c.i]);c.i++;c.flip=false;render();break;}
     case "vtest":{const b=findBook(S.sel.vocab),u=findUnit(b,S.sel.unit);tryStart("vocab",b,u);break;}
     case "wrongtest":{const wb=wrongBook();if(!wb.length)return;startVocabTest(wb,{title:"오답 단어장",bookId:"wrong",bookName:"오답 단어장",unitId:"wrong",unitName:"",wrongMode:true,unitItems:wb.length>=4?wb:null});break;}
-    case "pick":{const q=S.quiz;if(q.fb)return;const it=q.items[q.i];const i=Number(v);answer(i===it.answer,it.kind==="mean"?it.choices[it.answer]:(NUM[it.answer]+" "+chTxt(it.choices[it.answer],it.answer)).trim(),i);break;}
+    case "pick":{const q=S.quiz;if(q.fb)return;const it=q.items[q.i];const i=Number(v);answer(i===it.answer,(it.kind==="mean"||it.kind==="word")?it.choices[it.answer]:(NUM[it.answer]+" "+chTxt(it.choices[it.answer],it.answer)).trim(),i);break;}
     case "spell":doSpell();break;
     case "fill":doFill();break;
     case "tok":{const q=S.quiz;if(q.fb)return;q.order=(q.order||[]).concat(Number(v));render();break;}
