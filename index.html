@@ -173,12 +173,26 @@ function rememberName(n){const u=lsGet("mj_names",{});u[n]=Date.now();lsSet("mj_
   const h=lsGet("mj_hidden",[]);if(h.includes(n))lsSet("mj_hidden",h.filter(x=>x!==n))}
 function hideName(n){const h=lsGet("mj_hidden",[]);if(!h.includes(n))h.push(n);lsSet("mj_hidden",h);
   const u=lsGet("mj_names",{});delete u[n];lsSet("mj_names",u);const me=lsGet("mj_me",null);if(me&&me.name===n)try{localStorage.removeItem("mj_me")}catch(e){}}
-function hist(){return lsGet(stuKey("hist"),{})}
+function hist(){const h=lsGet(stuKey("hist"),{});if(!RESETS.length)return h;const out={};
+  Object.keys(h).forEach(k=>{const e=h[k];if(e&&e.at){const d=new Date(e.at),ds=ymd(d),up=resetsFor(typeOfBook(k.split("/")[0]),ds).reduce((a,x)=>Math.max(a,Date.parse(x.upto)||0),0);
+    if(up&&d.getTime()<up)return}out[k]=e});return out}
 function wrongBook(){return lsGet(stuKey("wrong"),[])}
 function dayKey(d){d=d||new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate()}
-function lockMap(){return lsGet(stuKey("lock_"+dayKey()),{})}
-function setLock(k,v){const m=lockMap();if(v===null)delete m[k];else m[k]=v;lsSet(stuKey("lock_"+dayKey()),m)}
-function todayLog(){return lsGet(stuKey("log_"+dayKey()),[])}
+/* 시험 기록 초기화 (2026-10-29): reset.json 목록에 있는 학생·날짜·구분의 '그 시각 이전' 시험을 없던 것으로 봄.
+   서버 기록은 합치기만 하므로 지우지 않고, 앱이 읽을 때 걸러 냄. 잠금은 초기화 횟수만큼 키 끝에 "#r<n>"을 붙여 새로 씀. */
+let RESETS=[];
+async function loadResets(){try{const r=await fetch("reset.json?b="+Date.now(),{cache:"no-store"});if(r.ok){const j=await r.json();RESETS=Array.isArray(j)?j:(j.resets||[])}}catch(e){}}
+function resetsFor(type,dayStr){if(!S.me)return [];const id=S.me.id||S.me.name;
+  return RESETS.filter(x=>x&&(x.id===id||x.id===S.me.name)&&x.day===dayStr&&(!x.type||x.type==="all"||x.type===type)&&x.upto)}
+function typeOfBook(bid){const b=findBook(bid);return b?b.type:""}
+function lockGen(k){return resetsFor(typeOfBook(k.split("/")[0]),ymd()).length}
+function rawLocks(){return lsGet(stuKey("lock_"+dayKey()),{})}
+function lockMap(){const raw=rawLocks(),m={};Object.keys(raw).forEach(rk=>{const i=rk.indexOf("#r"),k=i<0?rk:rk.slice(0,i),g=i<0?0:Number(rk.slice(i+2))||0;
+  if(g===lockGen(k))m[k]=raw[rk]});return m}
+function setLock(k,v){const raw=rawLocks(),g=lockGen(k),rk=g?k+"#r"+g:k;if(v===null)delete raw[rk];else raw[rk]=v;lsSet(stuKey("lock_"+dayKey()),raw)}
+function cutLog(arr,dayStr){const rs={};return (arr||[]).filter(e=>{if(!e||!e.at)return true;const t=e.type||"";
+  if(!(t in rs))rs[t]=resetsFor(t,dayStr).reduce((a,x)=>Math.max(a,Date.parse(x.upto)||0),0);return !(rs[t]&&Date.parse(e.at)<rs[t])})}
+function todayLog(){return cutLog(lsGet(stuKey("log_"+dayKey()),[]),ymd())}
 function hm(iso){const d=new Date(iso);return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
 /* group today's attempts by book+unit: first score, last score, tries */
 function todayGroups(){return groupLog(todayLog())}
@@ -202,7 +216,7 @@ const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t,b){return (b&&b.pick)||PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-28a";
+const BUILD="2026-10-29a";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -210,7 +224,7 @@ let awayAt=0;
 function awayKey(q){return q&&!q.wrongMode&&q.bookId?q.bookId+"/"+q.unitId:""}
 function awayInit(q){q.away=0;q.awaySec=0;const k=awayKey(q),l=k&&lockMap()[k];
   if(l&&l.state==="started"&&(l.away||l.awaySec)&&(l.retryNo||0)===(q.retryNo||0)){q.away=l.away||0;q.awaySec=l.awaySec||0}}
-function awaySave(q){const k=awayKey(q);if(!k)return;const m=lockMap();if(m[k]&&m[k].state==="started"){m[k].away=q.away;m[k].awaySec=q.awaySec;lsSet(stuKey("lock_"+dayKey()),m)}}
+function awaySave(q){const k=awayKey(q);if(!k)return;const m=lockMap();if(m[k]&&m[k].state==="started"){setLock(k,Object.assign({},m[k],{away:q.away,awaySec:q.awaySec}))}}
 function awayTxt(n,sec){return n?`화면 이탈 ${n}회`+(sec>=60?` (${Math.round(sec/60)}분)`:` (${sec}초)`):""}
 document.addEventListener("visibilitychange",()=>{
   const q=S.quiz;if(S.view!=="quiz"||!q)return;
@@ -268,7 +282,7 @@ function useApi(){if(!API_URL)return false;if(API_ON)return true;try{return loca
 function ymd(d){d=d||new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function outbox(){return S.me?lsGet(stuKey("outbox"),[]):[]}
 function collectState(){return {v:1,day:ymd(),hist:hist(),wrong:wrongBook(),wrongAt:lsGet(stuKey("wrongAt"),0),sel:lsGet(stuKey("sel"),{}),selAt:lsGet(stuKey("selAt"),0),
-  lock:lockMap(),log:todayLog(),sent:lsGet(stuKey("sent_"+dayKey()),null),updated:Date.now()}}
+  lock:rawLocks(),log:lsGet(stuKey("log_"+dayKey()),[]),sent:lsGet(stuKey("sent_"+dayKey()),null),updated:Date.now()}}
 function applyState(st){if(!st||!S.me)return;
   lsSet(stuKey("hist"),st.hist||{});lsSet(stuKey("wrong"),st.wrong||[]);lsSet(stuKey("wrongAt"),st.wrongAt||0);
   lsSet(stuKey("sel"),st.sel||{});lsSet(stuKey("selAt"),st.selAt||0);
@@ -359,7 +373,7 @@ function syncNote(){const n=outbox().length,st=S.sync||{};
   :`<div class="note" style="background:var(--ok-bg);color:var(--ok)"><b>✓ 시험 결과는 끝날 때마다 원장님께 자동으로 기록돼요.</b>${st.at?`<br>마지막 저장 ${hm(st.at)}`:""}</div>`}
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden)return;
-  if(S.view!=="quiz"){sync();diaryLoad();checkBuild()}});
+  if(S.view!=="quiz"){loadResets().then(()=>{sync();if(S.view!=="quiz"&&S.view!=="cards")render()});diaryLoad();checkBuild()}});
 window.addEventListener("online",()=>{sync();diaryLoad()});
 setInterval(()=>{if(useApi()&&S.me&&outbox().length&&!syncing)sync()},60000);
 setInterval(()=>{if(useApi()&&S.me&&S.diary.today&&ymd()>S.diary.today)diaryLoad()},60000);
@@ -531,7 +545,7 @@ function md(d){return `${d.getMonth()+1}/${d.getDate()}`}
 function weekGroups(n){
   n=n||7;const now=new Date(),days=[],seen=new Set();
   for(let i=n-1;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i);
-    const gs=groupLog(lsGet(stuKey("log_"+dayKey(d)),[]));
+    const gs=groupLog(cutLog(lsGet(stuKey("log_"+dayKey(d)),[]),ymd(d)));
     gs.forEach(x=>seen.add(dayKey(d)+"|"+x.type+"|"+x.bookName+"|"+x.unitName));days.push({d,gs})}
   const from=days[0].d;
   Object.entries(hist()).forEach(([k,h])=>{if(!h||!h.at)return;const t=new Date(h.at);if(isNaN(t)||t<from)return;
@@ -1200,6 +1214,7 @@ async function boot(){
   try{const r=await fetch("content.json",{cache:"no-store"});if(!r.ok)throw 0;S.content=await r.json()}
   catch(e){app.innerHTML=`<div class="panel"><p>교재를 불러오지 못했어요. 페이지를 새로 열어 주세요.</p></div>`;return}
   S.content.books=S.content.books||[];
+  await loadResets();
   const me=lsGet("mj_me",null);
   /* 이 폰을 한 명만 쓰면 바로 들어가고, 여러 명이 쓴 폰이면 이름 목록부터 보여 줌 */
   if(useApi()){if(me&&me.name&&me.token){S.me=me;S.sel=lsGet(stuKey("sel"),{});S.view="home"}}
