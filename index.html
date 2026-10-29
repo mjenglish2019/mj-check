@@ -216,7 +216,7 @@ const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t,b){return (b&&b.pick)||PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-29a";
+const BUILD="2026-10-29b";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -615,7 +615,7 @@ function vToday(){
       <div class="grow"><div class="name">${esc(TYPES[x.type]||x.type)} · ${esc(x.bookName)}${x.unitName?" "+esc(x.unitName):""}</div>
       <div class="muted small tnum">${x.tries.map(t=>t.pct).join(" → ")}점 · ${x.tries.length}회 · ${hm(x.start)}${x.tries.length>1?"~"+hm(x.end):""}</div>
       ${x.away?`<div class="small" style="color:var(--bad)"><b>${awayTxt(x.away,x.awaySec)}</b></div>`:""}
-      ${!x.last.pass&&x.last.wrong&&x.last.wrong.length?`<div class="small" style="color:var(--bad)">남은 오답: ${esc(x.last.wrong.join(", "))}</div>`:""}
+      ${!x.last.pass&&x.final&&x.last.wrong&&x.last.wrong.length?`<div class="small" style="color:var(--bad)">남은 오답: ${esc(x.last.wrong.join(", "))}</div>`:""}
       ${rk?`<div class="small" style="color:var(--pend)"><b>눌러서 틀린 문제·해설 보기 ›</b></div>`:""}</div>
       <span class="badge ${x.passed?"ok":x.final?"pend":"bad"}">${x.passed?"통과":x.final?"조교 확인":"재시험 중"}</span></${rk?"button":"div"}>`}).join("")}</div>`
   :`<div class="panel"><div class="empty">오늘 본 시험이 아직 없어요.</div></div>`}
@@ -697,6 +697,8 @@ function vCards(){
   <button class="ghost" data-act="${c.back==="vocab"?"vmenu":"home"}">그만하기</button>`;
 }
 
+/* 정답·해설 공개 (2026-10-29 원장님): 처음·재시험 1·2차에는 안 보이고 재시험 3차(마지막)·조교 확인·오답 단어장 시험에서만 */
+function showAns(q){return !!(q&&(q.wrongMode||(q.retryNo||0)>=MAXRETRY))}
 function vQuiz(){
   const q=S.quiz,it=q.items[q.i];
   const top=`<div class="qmeta"><span>${esc(q.title)}</span><span>${q.away?`<b style="color:var(--bad)">이탈 ${q.away}</b> · `:""}${q.i+1} / ${q.items.length}</span></div><div class="progress"><i style="width:${(q.i/q.items.length)*100}%"></i></div>`;
@@ -730,13 +732,14 @@ function vQuiz(){
     main=`<div class="panel">${it.passage?`<div class="passage ipass">${ipass(it.passage)}</div>`:q.passage?`<div class="passage">${esc(q.passage)}</div>`:""}
       ${isWord?`<p class="muted small">알맞은 뜻을 고르세요.</p>`:""}
       <div class="prompt ${isWord?"word":(it.prompt.length>90?"long":"")}">${it.no?`<b>${it.no}.</b> `:""}${isWord?esc(it.prompt):br(blankify(it.prompt))}</div>
-      <div class="choices">${it.choices.map((c,i)=>{let cls="";if(fb){if(i===it.answer)cls="right";else if(i===q.picked)cls="wrong"}
+      <div class="choices">${it.choices.map((c,i)=>{let cls="";if(fb){if(showAns(q)){if(i===it.answer)cls="right";else if(i===q.picked)cls="wrong"}else if(i===q.picked)cls=fb.ok?"right":"wrong"}
         return `<button class="choice ${cls}" data-act="pick" data-v="${i}" ${fb?"disabled":""}><span class="n">${NUM[i]}</span><span>${isWord?esc(c):ul(esc(chTxt(c,i)))}</span></button>`}).join("")}</div></div>`;
   }
   let fbh="";
   if(fb){
-    fbh=fb.pending?`<div class="fb pend"><b>모범 답안과 달라요. 조교 선생님이 확인해요.</b><span class="exp">모범 답안: ${esc(fb.answerText)}</span>${it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}</div>`
-    :`<div class="fb ${fb.ok?"ok":"bad"}"><b>${fb.ok?"정답이에요.":"틀렸어요. 정답: "+esc(fb.answerText)}</b>${it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}</div>
+    const sa=showAns(q);
+    fbh=fb.pending?`<div class="fb pend"><b>모범 답안과 달라요. 조교 선생님이 확인해요.</b>${sa?`<span class="exp">모범 답안: ${esc(fb.answerText)}</span>${it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}`:""}</div>`
+    :`<div class="fb ${fb.ok?"ok":"bad"}"><b>${fb.ok?"정답이에요.":sa?"틀렸어요. 정답: "+esc(fb.answerText):"틀렸어요."}</b>${sa&&it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}${!fb.ok&&!sa?`<span class="exp">정답과 해설은 재시험 ${MAXRETRY}차 때 보여요.</span>`:""}</div>
     <button class="primary wide" data-act="next">${q.i+1<q.items.length?"다음 문제":"결과 보기"}</button>`;
   }
   return header()+top+main+fbh+`<button class="ghost" data-act="quit">그만두기</button>`;
@@ -780,9 +783,9 @@ function vResult(){
     ${r.pass?"":r.final?`<p class="small"><b>재시험 ${MAXRETRY}번을 모두 썼어요. 이 화면을 조교 선생님께 보여 주고 같이 풀어요.</b></p>`:`<p class="muted small">통과 기준은 ${r.passScore}점이에요. 재시험 기회 ${MAXRETRY-(r.retryNo||0)}번 남았어요.</p>`}
   </div>
   ${r.pending.length?`<div class="panel"><h2>조교 확인 ${r.pending.length}개</h2><p class="muted small">모범 답안과 달라서 조교 선생님이 맞는지 봐 줘요.</p>
-    <div class="wlist">${r.pending.map(p=>`<div><span>${esc(p.q)}<br>내 답: ${esc(p.typed)}<br><b>모범 답안: ${esc(p.a)}</b></span></div>`).join("")}</div></div>`:""}
+    <div class="wlist">${r.pending.map(p=>`<div><span>${esc(p.q)}<br>내 답: ${esc(p.typed)}${showAns(r)?`<br><b>모범 답안: ${esc(p.a)}</b>`:""}</span></div>`).join("")}</div></div>`:""}
   ${r.wrong.length?`<div class="panel"><h2>틀린 ${r.type==="vocab"?"단어":"문제"} ${r.wrong.length}개</h2>
-    <div class="wlist">${r.wrong.map(x=>r.type==="vocab"?`<div><span class="en">${esc(x.w)}</span><span>${esc(x.m)}</span></div>`:`<div><span>${br(ul(esc(x.q)))}<br><b>정답: ${ul(esc(x.a))}</b>${r.final&&x.src&&x.src.exp?`<br><span class="muted">${esc(x.src.exp)}</span>`:""}</span></div>`).join("")}</div>
+    ${showAns(r)?`<div class="wlist">${r.wrong.map(x=>r.type==="vocab"?`<div><span class="en">${esc(x.w)}</span><span>${esc(x.m)}</span></div>`:`<div><span>${br(ul(esc(x.q)))}<br><b>정답: ${ul(esc(x.a))}</b>${x.src&&x.src.exp?`<br><span class="muted">${esc(x.src.exp)}</span>`:""}</span></div>`).join("")}</div>`:`<p class="muted small">정답과 해설은 재시험 ${MAXRETRY}차 때 보여요. 틀린 것만 다시 풀어 보세요.</p>`}
     ${r.final?"":`<button class="primary" data-act="retry">틀린 것만 다시 풀기 (재시험 ${(r.retryNo||0)+1}/${MAXRETRY})</button>`}</div>`:""}
   <div class="row"><button class="grow" data-act="today">오늘 본 시험 보기</button><button class="grow" data-act="${r.type==="vocab"&&!r.wrongMode?"vmenu":"home"}">돌아가기</button></div>`;
 }
@@ -968,7 +971,12 @@ function finish(){
     let wb=wrongBook();
     const rightSet=new Set(q.items.filter(it=>!q.wrong.includes(it)).map(it=>it.src.w));
     if(q.wrongMode)wb=wb.filter(x=>!rightSet.has(x.w));
-    wrong.forEach(x=>{if(!wb.some(y=>y.w===x.w))wb.push({w:x.w,m:x.m})});
+    /* 단원 시험은 재시험 동안 틀린 단어를 모아 두었다가 통과·조교 확인으로 끝날 때 오답 단어장에 넣음(그 전에 뜻이 보이지 않게) */
+    const vk=stuKey("vw_"+dayKey()),vm=lsGet(vk,{}),uk=q.bookId+"/"+q.unitId,vw=q.retry?(vm[uk]||[]).slice():[];
+    wrong.forEach(x=>{if(!vw.some(y=>y.w===x.w))vw.push({w:x.w,m:x.m})});
+    const done=q.wrongMode||pct>=((bk&&bk.pass)||passOf(q.type))||(q.retryNo||0)>=MAXRETRY;
+    if(!q.wrongMode){if(done)delete vm[uk];else vm[uk]=vw;lsSet(vk,vm)}
+    if(done)(q.wrongMode?wrong:vw).forEach(x=>{if(!wb.some(y=>y.w===x.w))wb.push({w:x.w,m:x.m})});
     lsSet(stuKey("wrong"),wb);lsSet(stuKey("wrongAt"),Date.now());
   }
   const resAt=new Date().toISOString();
