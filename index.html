@@ -216,7 +216,7 @@ const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t,b){return (b&&b.pick)||PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-29b";
+const BUILD="2026-10-29c";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -887,12 +887,18 @@ function aContent(){
 }
 
 /* ---------- quiz builders ---------- */
+/* 재시험 때 순서·정답 번호가 앞 시험과 같지 않게 (2026-10-29 원장님) */
+const vLastPos={};
 function vocabItems(words,pool){
-  const allM=pool.map(x=>x.m);
-  return shuffle(words).map(x=>{
+  const allM=pool.map(x=>x.m),key=ws=>ws.map(x=>x.w).join("|");
+  let order=shuffle(words);
+  for(let t=0;words.length>1&&key(order)===key(words)&&t<10;t++)order=shuffle(words);
+  return order.map(x=>{
     if(/~/.test(x.w)||Math.random()<.5){
       const others=shuffle([...new Set(allM.filter(m=>m!==x.m))]).slice(0,3);
-      const ch=shuffle([x.m].concat(others));
+      let ch=shuffle([x.m].concat(others));
+      for(let t=0;ch.length>1&&vLastPos[x.w]===ch.indexOf(x.m)&&t<10;t++)ch=shuffle(ch);
+      vLastPos[x.w]=ch.indexOf(x.m);
       return {kind:"mean",prompt:x.w,choices:ch,answer:ch.indexOf(x.m),src:x};
     }
     return {kind:"spell",prompt:x.m,answer:x.w,src:x};
