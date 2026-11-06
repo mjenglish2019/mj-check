@@ -216,7 +216,7 @@ const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t,b){return (b&&b.pick)||PICK_BY[t]||10}
 const MAXRETRY=3;
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-10-29e";
+const BUILD="2026-11-06a";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -250,7 +250,18 @@ function br(h){return String(h).replace(/\n/g,"<br>")}
 function blankify(q){return ul(esc(q).replace(/_{2,}/g,'<span class="blank"></span>'))}
 function fmtDate(iso){const d=new Date(iso);if(isNaN(d))return "";return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
 let toastT;function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},2200)}
-function speak(w){try{const u=new SpeechSynthesisUtterance(w);u.lang="en-US";u.rate=.9;speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){toast("이 기기에서는 발음 듣기가 안 돼요")}}
+let usVoice=null;
+function pickUsVoice(){try{const vs=speechSynthesis.getVoices()||[];if(!vs.length)return null;
+  const us=vs.filter(v=>/^en[-_]US$/i.test(v.lang||""));
+  const bad=/espeak|compact/i;
+  const pref=[/google.*us english/i,/samantha/i,/aria|jenny|guy|davis|ava|allison|evan|nathan|zoe|joelle/i,/microsoft.*english.*united states/i,/google/i];
+  for(const re of pref){const v=us.find(x=>re.test(x.name)&&!bad.test(x.name));if(v)return v}
+  return us.find(x=>!bad.test(x.name))||us[0]||null}catch(e){return null}}
+try{speechSynthesis.getVoices();speechSynthesis.addEventListener("voiceschanged",()=>{usVoice=pickUsVoice()})}catch(e){}
+function speak(w){try{const u=new SpeechSynthesisUtterance(w);u.lang="en-US";u.rate=.9;
+  if(!usVoice)usVoice=pickUsVoice();
+  if(usVoice){u.voice=usVoice;u.lang=usVoice.lang.replace("_","-")}
+  speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){toast("이 기기에서는 발음 듣기가 안 돼요")}}
 function carry(it){const c=it.kind==="fill"?{kind:"fill",prompt:it.prompt,ctx:it.ctx,hint:it.hint,s:it.s,answers:it.answers,exp:it.exp}:{prompt:it.prompt,choices:it.choices,answer:it.answer,exp:it.exp};
   if(it.passage)c.passage=it.passage;if(it.no)c.no=it.no;return c}
 /* 문항별 지문 (미니 모의고사, 2026-10-28): \n 줄바꿈 · [밑줄] · ___ 빈칸 */
