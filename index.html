@@ -215,8 +215,11 @@ function findBook(id){return S.full[id]||(S.content.books||[]).find(b=>b.id===id
 const PICK_BY={grammar:20,reading:10,naesin:20};
 function pickOf(t,b){return (b&&b.pick)||PICK_BY[t]||10}
 const MAXRETRY=3;
+/* 교재별 재시험 횟수(book.retry, 기본 3)·보기 순서 섞기(book.shufChoices) (2026-11-06) */
+function maxR(id){const b=id&&findBook(id);return (b&&b.retry)||MAXRETRY}
+function shufCh(items,bookId){const b=bookId&&findBook(bookId);if(!b||!b.shufChoices)return items;return items.map(x=>{if(!x.choices||x.kind==="fill")return x;const a=x.choices[x.answer],ch=shuffle(x.choices.slice());return Object.assign({},x,{choices:ch,answer:ch.indexOf(a)})})}
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-11-06a";
+const BUILD="2026-11-06b";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -532,7 +535,7 @@ function vStart(){
 
 function unitBadge(key,t){
   const h=hist()[key],l=lockMap()[key];
-  if(l&&l.state==="open")return `<span class="badge bad">재시험 ${MAXRETRY-(l.retryNo||0)}번 남음</span>`;
+  if(l&&l.state==="open")return `<span class="badge bad">재시험 ${maxR(key.split("/")[0])-(l.retryNo||0)}번 남음</span>`;
   if(l&&l.state==="started")return `<span class="badge none">보는 중</span>`;
   if(!h)return `<span class="badge none">안 봄</span>`;
   return h.pass?`<span class="badge ok">${h.retryPassed?"재시험 "+h.retryPassed+"회 ":""}통과</span>`:h.final?`<span class="badge pend">조교 확인</span>`:`<span class="badge bad">${h.pct}점 재시험</span>`;
@@ -547,7 +550,7 @@ function todayText(){
     lines.push(`  ${x.tries.map(t=>t.pct).join(" → ")}점 (${x.tries.length}회) · ${st}${x.away?" · "+awayTxt(x.away,x.awaySec):""}`);
     if(!x.passed&&x.last.wrong&&x.last.wrong.length)lines.push("  다시 외울 단어: "+x.last.wrong.join(", "))});
   hwLines().forEach(l=>lines.push(l));
-  lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험(3회)으로 다시 확인합니다.");
+  lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험으로 다시 확인합니다.");
   return lines.join("\n");
 }
 /* 최근 7일 기록 (2026-10-14): 이 기기에 남은 날짜별 기록 + 서버에서 받은 단원별 기록(hist)으로 채움 */
@@ -582,7 +585,7 @@ function weekText(){
         if(x.h)lines.push(`  첫 시험 ${x.h.pct}점${x.h.pass&&x.h.retryPassed?` → 재시험 ${x.h.retryPassed}회 만에`:""} · ${st}`);
         else lines.push(`  ${x.tries.map(t=>t.pct).join(" → ")}점 (${x.tries.length}회) · ${st}${x.away?" · "+awayTxt(x.away,x.awaySec):""}`)})})}
   hwLines(7).forEach(l=>lines.push(l));
-  lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험(3회)으로 다시 확인합니다.");
+  lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험으로 다시 확인합니다.");
   return lines.join("\n");
 }
 async function shareText(t){S.shareText=t;S.shareBox=false;
@@ -709,7 +712,7 @@ function vCards(){
 }
 
 /* 정답·해설 공개 (2026-10-29 원장님): 처음·재시험 1·2차에는 안 보이고 재시험 3차(마지막)·조교 확인·오답 단어장 시험에서만 */
-function showAns(q){return !!(q&&(q.wrongMode||(q.retryNo||0)>=MAXRETRY))}
+function showAns(q){return !!(q&&(q.wrongMode||(q.retryNo||0)>=maxR(q.bookId||(q.quiz&&q.quiz.bookId))))}
 function vQuiz(){
   const q=S.quiz,it=q.items[q.i];
   const top=`<div class="qmeta"><span>${esc(q.title)}</span><span>${q.away?`<b style="color:var(--bad)">이탈 ${q.away}</b> · `:""}${q.i+1} / ${q.items.length}</span></div><div class="progress"><i style="width:${(q.i/q.items.length)*100}%"></i></div>`;
@@ -750,13 +753,13 @@ function vQuiz(){
   if(fb){
     const sa=showAns(q);
     fbh=fb.pending?`<div class="fb pend"><b>모범 답안과 달라요. 조교 선생님이 확인해요.</b>${sa?`<span class="exp">모범 답안: ${esc(fb.answerText)}</span>${it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}`:""}</div>`
-    :`<div class="fb ${fb.ok?"ok":"bad"}"><b>${fb.ok?"정답이에요.":sa?"틀렸어요. 정답: "+esc(fb.answerText):"틀렸어요."}</b>${sa&&it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}${!fb.ok&&!sa?`<span class="exp">정답과 해설은 재시험 ${MAXRETRY}차 때 보여요.</span>`:""}</div>
+    :`<div class="fb ${fb.ok?"ok":"bad"}"><b>${fb.ok?"정답이에요.":sa?"틀렸어요. 정답: "+esc(fb.answerText):"틀렸어요."}</b>${sa&&it.exp?`<span class="exp">${esc(it.exp)}</span>`:""}${!fb.ok&&!sa?`<span class="exp">정답과 해설은 재시험 ${maxR(q.bookId)}차 때 보여요.</span>`:""}</div>
     <button class="primary wide" data-act="next">${q.i+1<q.items.length?"다음 문제":"결과 보기"}</button>`;
   }
   return header()+top+main+fbh+`<button class="ghost" data-act="quit">그만두기</button>`;
 }
 
-/* 조교 확인 화면 (2026-10-13): 재시험 3회 미통과 단원의 남은 틀린 문제·정답·해설 */
+/* 조교 확인 화면 (2026-10-13): 재시험을 모두 쓴 단원의 남은 틀린 문제·정답·해설 */
 function openReview(k){S.review=k;S.view="review";render();window.scrollTo(0,0)}
 function finalKeyFor(x){const m=lockMap();return Object.keys(m).find(k=>{const l=m[k];return l&&l.state==="final"&&l.meta&&l.meta.bookName===x.bookName&&l.meta.unitName===x.unitName})||""}
 function vReview(){
@@ -765,7 +768,7 @@ function vReview(){
   const head=`<div class="panel" style="align-items:flex-start">
     <span class="verdict pend">조교 확인</span>
     <h2>${esc(m.bookName||"")} ${esc(m.unitName||"")}</h2>
-    <p class="small">재시험 ${MAXRETRY}번을 모두 썼어요. <b>조교 선생님과 같이</b> 아래 문제를 다시 풀어요.</p>
+    <p class="small">재시험 ${maxR(m.bookId)}번을 모두 썼어요. <b>조교 선생님과 같이</b> 아래 문제를 다시 풀어요.</p>
     ${items.length?`<p class="muted small">남은 ${l.type==="vocab"?"단어":"문제"} ${items.length}개${l.type==="vocab"?"":" · 정답은 초록색이에요"}</p>`:""}</div>`;
   if(!items.length)return header()+back+head+`<div class="panel"><div class="empty">이 단원은 기능을 넣기 전에 잠겨서 틀린 문제 기록이 없어요. 내일 다시 풀 수 있어요.</div></div>`;
   let body="";
@@ -786,18 +789,18 @@ function vReview(){
 function vResult(){
   const r=S.result;
   return header()+`<div class="panel" style="align-items:flex-start">
-    <p class="muted">${esc(r.bookName)} · ${esc(r.unitName)}${r.retryNo?` · 재시험 ${r.retryNo}/${MAXRETRY}`:""}</p>
+    <p class="muted">${esc(r.bookName)} · ${esc(r.unitName)}${r.retryNo?` · 재시험 ${r.retryNo}/${maxR((r.quiz||{}).bookId)}`:""}</p>
     <div class="row" style="align-items:flex-end;gap:14px"><span class="score">${r.pct}</span><span class="muted" style="padding-bottom:8px">점 (${r.correct}/${r.total})</span></div>
     <span class="verdict ${r.pass?"ok":(r.final||r.pending.length)?"pend":"bad"}">${r.pass?"통과":r.final?"조교 확인":r.pending.length?"확인 필요":"재시험"}</span>
     ${useApi()?`<p class="small ${outbox().length?"muted":"ok-t"}">${outbox().length?"⏳ 원장님께 보내는 중…":"✓ 원장님께 기록됐어요"}</p>`:""}
     ${r.away?`<p class="small" style="color:var(--bad)"><b>⚠ 시험 중 ${awayTxt(r.away,r.awaySec)}</b> · 오늘 본 시험과 제출 내용에 남아요</p>`:""}
-    ${r.pass?"":r.final?`<p class="small"><b>재시험 ${MAXRETRY}번을 모두 썼어요. 이 화면을 조교 선생님께 보여 주고 같이 풀어요.</b></p>`:`<p class="muted small">통과 기준은 ${r.passScore}점이에요. 재시험 기회 ${MAXRETRY-(r.retryNo||0)}번 남았어요.</p>`}
+    ${r.pass?"":r.final?`<p class="small"><b>재시험 ${maxR((r.quiz||{}).bookId)}번을 모두 썼어요. 이 화면을 조교 선생님께 보여 주고 같이 풀어요.</b></p>`:`<p class="muted small">통과 기준은 ${r.passScore}점이에요. 재시험 기회 ${maxR((r.quiz||{}).bookId)-(r.retryNo||0)}번 남았어요.</p>`}
   </div>
   ${r.pending.length?`<div class="panel"><h2>조교 확인 ${r.pending.length}개</h2><p class="muted small">모범 답안과 달라서 조교 선생님이 맞는지 봐 줘요.</p>
     <div class="wlist">${r.pending.map(p=>`<div><span>${esc(p.q)}<br>내 답: ${esc(p.typed)}${showAns(r)?`<br><b>모범 답안: ${esc(p.a)}</b>`:""}</span></div>`).join("")}</div></div>`:""}
   ${r.wrong.length?`<div class="panel"><h2>틀린 ${r.type==="vocab"?"단어":"문제"} ${r.wrong.length}개</h2>
-    ${showAns(r)?`<div class="wlist">${r.wrong.map(x=>r.type==="vocab"?`<div><span class="en">${esc(x.w)}</span><span>${esc(x.m)}</span></div>`:`<div><span>${br(ul(esc(x.q)))}<br><b>정답: ${ul(esc(x.a))}</b>${x.src&&x.src.exp?`<br><span class="muted">${esc(x.src.exp)}</span>`:""}</span></div>`).join("")}</div>`:`<p class="muted small">정답과 해설은 재시험 ${MAXRETRY}차 때 보여요. 틀린 것만 다시 풀어 보세요.</p>`}
-    ${r.final?"":`<button class="primary" data-act="retry">틀린 것만 다시 풀기 (재시험 ${(r.retryNo||0)+1}/${MAXRETRY})</button>`}</div>`:""}
+    ${showAns(r)?`<div class="wlist">${r.wrong.map(x=>r.type==="vocab"?`<div><span class="en">${esc(x.w)}</span><span>${esc(x.m)}</span></div>`:`<div><span>${br(ul(esc(x.q)))}<br><b>정답: ${ul(esc(x.a))}</b>${x.src&&x.src.exp?`<br><span class="muted">${esc(x.src.exp)}</span>`:""}</span></div>`).join("")}</div>`:`<p class="muted small">정답과 해설은 재시험 ${maxR((r.quiz||{}).bookId)}차 때 보여요. 틀린 것만 다시 풀어 보세요.</p>`}
+    ${r.final?"":`<button class="primary" data-act="retry">틀린 것만 다시 풀기 (재시험 ${(r.retryNo||0)+1}/${maxR((r.quiz||{}).bookId)})</button>`}</div>`:""}
   <div class="row"><button class="grow" data-act="today">오늘 본 시험 보기</button><button class="grow" data-act="${r.type==="vocab"&&!r.wrongMode?"vmenu":"home"}">돌아가기</button></div>`;
 }
 
@@ -932,6 +935,7 @@ function launch(type,meta,items,retryNo){
   if(type==="vocab"){startVocabTest(items,Object.assign({},meta,{retry:retryNo>0,retryNo}));return}
   /* 문법·독해 재시험은 문제 순서를 섞음(앞 시험과 다른 순서, 보기 순서는 그대로) (2026-10-29 원장님) */
   let its=items;if(retryNo>0&&items.length>1){const kf=a=>a.map(x=>x.prompt+"|"+(x.s||"")).join("\n");its=shuffle(items);for(let t=0;kf(its)===kf(items)&&t<10;t++)its=shuffle(items)}
+  if(retryNo>0)its=shufCh(its,meta.bookId);
   S.quiz={type,items:its.map(x=>Object.assign({kind:"mc"},x)),i:0,correct:0,wrong:[],fb:null,title:meta.title,bookId:meta.bookId,bookName:meta.bookName,
     unitId:meta.unitId,unitName:meta.unitName,passage:meta.passage||"",retry:retryNo>0,retryNo};
   awayInit(S.quiz);S.view="quiz";render();window.scrollTo(0,0);
@@ -942,10 +946,10 @@ function tryStart(type,b,u){
   if(type==="vocab")meta.unitItems=u.items;
   if(l&&l.state==="pass"){toast("오늘 이미 통과한 단원이에요");return}
   if(l&&l.state==="final"){openReview(k);return}
-  if(l&&l.state==="started"&&l.items){toast(l.retryNo?`재시험 ${l.retryNo}/${MAXRETRY}을 다시 봐요`:"보던 시험을 처음부터 다시 봐요");launch(type,meta,l.items,l.retryNo||0);return}
-  if(l&&l.state==="open"&&l.items){const n=(l.retryNo||0)+1;toast(`재시험 ${n}/${MAXRETRY}을 봐요`);launch(type,meta,l.items,n);return}
+  if(l&&l.state==="started"&&l.items){toast(l.retryNo?`재시험 ${l.retryNo}/${maxR(b.id)}을 다시 봐요`:"보던 시험을 처음부터 다시 봐요");launch(type,meta,l.items,l.retryNo||0);return}
+  if(l&&l.state==="open"&&l.items){const n=(l.retryNo||0)+1;toast(`재시험 ${n}/${maxR(b.id)}을 봐요`);launch(type,meta,l.items,n);return}
   const items=type==="vocab"?u.items:(b.ordered?u.items.slice():shuffle(u.items)).slice(0,pickOf(type,b)).map(x=>{const o=x.a?{kind:"fill",prompt:x.q,ctx:x.ctx||"",hint:x.hint||"",s:x.s,answers:x.a,exp:x.exp}:{prompt:x.q,choices:x.choices,answer:x.answer,exp:x.exp};if(x.passage)o.passage=x.passage;if(x.no)o.no=x.no;return o});
-  launch(type,meta,items,0);
+  launch(type,meta,type==="vocab"?items:shufCh(items,b.id),0);
 }
 function startVocabTest(words,meta){
   const pool=meta.unitItems&&meta.unitItems.length>=4?meta.unitItems:allVocabPool();
@@ -998,28 +1002,28 @@ function finish(){
     /* 단원 시험은 재시험 동안 틀린 단어를 모아 두었다가 통과·조교 확인으로 끝날 때 오답 단어장에 넣음(그 전에 뜻이 보이지 않게) */
     const vk=stuKey("vw_"+dayKey()),vm=lsGet(vk,{}),uk=q.bookId+"/"+q.unitId,vw=q.retry?(vm[uk]||[]).slice():[];
     wrong.forEach(x=>{if(!vw.some(y=>y.w===x.w))vw.push({w:x.w,m:x.m})});
-    const done=q.wrongMode||pct>=((bk&&bk.pass)||passOf(q.type))||(q.retryNo||0)>=MAXRETRY;
+    const done=q.wrongMode||pct>=((bk&&bk.pass)||passOf(q.type))||(q.retryNo||0)>=maxR(q.bookId);
     if(!q.wrongMode){if(done)delete vm[uk];else vm[uk]=vw;lsSet(vk,vm)}
     if(done)(q.wrongMode?wrong:vw).forEach(x=>{if(!wb.some(y=>y.w===x.w))wb.push({w:x.w,m:x.m})});
     lsSet(stuKey("wrong"),wb);lsSet(stuKey("wrongAt"),Date.now());
   }
   const resAt=new Date().toISOString();
   {const lg=todayLog();lg.push({at:resAt,type:q.type,bookName:q.wrongMode?"오답 단어장":q.bookName,unitName:q.wrongMode?"":q.unitName,
-    pct,pass,correct:q.correct,total,retry:!!(q.retry||q.wrongMode),retryNo:q.retryNo||0,final:!pass&&(q.retryNo||0)>=MAXRETRY,wrong:q.type==="vocab"?wrong.map(x=>x.w).slice(0,40):[],pend:(q.pending||[]).length,away:q.away||0,awaySec:q.awaySec||0});
+    pct,pass,correct:q.correct,total,retry:!!(q.retry||q.wrongMode),retryNo:q.retryNo||0,final:!pass&&(q.retryNo||0)>=maxR(q.bookId),wrong:q.type==="vocab"?wrong.map(x=>x.w).slice(0,40):[],pend:(q.pending||[]).length,away:q.away||0,awaySec:q.awaySec||0});
     lsSet(stuKey("log_"+dayKey()),lg)}
-  const rn=q.retryNo||0,final=!pass&&rn>=MAXRETRY;
+  const rn=q.retryNo||0,final=!pass&&rn>=maxR(q.bookId);
   if(!q.wrongMode){const h=hist(),k=q.bookId+"/"+q.unitId;
     if(!q.retry)h[k]={pct,pass,at:new Date().toISOString()};
     else if(h[k]){if(pass){h[k].pass=true;h[k].retryPassed=rn}else if(final)h[k].final=true}
     lsSet(stuKey("hist"),h);
     if(pass)setLock(k,{state:"pass"});
     else if(final)setLock(k,{state:"final",type:q.type,at:new Date().toISOString(),
-      meta:{bookName:q.bookName,unitName:q.unitName,passage:q.passage||""},
+      meta:{bookId:q.bookId,bookName:q.bookName,unitName:q.unitName,passage:q.passage||""},
       items:q.type==="vocab"?q.wrong.map(it=>({w:it.src.w,m:it.src.m})):q.wrong.map(carry)});
     else setLock(k,{state:"open",type:q.type,retryNo:rn,items:q.type==="vocab"?q.wrong.map(it=>({w:it.src.w,m:it.src.m})):q.wrong.map(carry)});}
   const now=new Date();
   const label=q.wrongMode?"오답 단어장":q.bookName+" "+q.unitName;
-  const lines=[`[엠제이 점검] ${S.me.name}`,`${TYPES[q.type]} | ${label}${rn?` (재시험 ${rn}/${MAXRETRY})`:""}`,`${q.correct}/${total} · ${pct}점 · ${pass?"통과":final?"재시험 3회 미통과 → 조교 확인":"재시험"}`];
+  const lines=[`[엠제이 점검] ${S.me.name}`,`${TYPES[q.type]} | ${label}${rn?` (재시험 ${rn}/${maxR(q.bookId)})`:""}`,`${q.correct}/${total} · ${pct}점 · ${pass?"통과":final?"재시험 ${maxR(q.bookId)}회 미통과 → 조교 확인":"재시험"}`];
   if(wrong.length)lines.push("틀림: "+(q.type==="vocab"?wrong.map(x=>x.w).join(", "):wrong.length+"문제"));
   if(q.away)lines.push(awayTxt(q.away,q.awaySec||0));
   if(pending.length){lines.push("조교 확인 필요 "+pending.length+"문제:");pending.forEach(p=>lines.push("- "+p.q+" → "+p.typed))}
@@ -1172,7 +1176,7 @@ app.addEventListener("click",async e=>{
       const ok=it.answers.some(a=>normSent(a)===normSent(val));answer(ok,it.model,null,!ok);break;}
     case "next":next();break;
     case "quit":{const qk=awayKey(S.quiz);if(qk){const lm=lockMap();if(lm[qk]&&lm[qk].state==="started"){setLock(qk,Object.assign({},lm[qk],{quitAt:Date.now()}));sync()}}}S.quiz=null;S.view=S.tab==="vocab"&&S.sel.unit?"vmenu":"home";render();break;
-    case "retry":{const r=S.result,q=r.quiz;if((q.retryNo||0)>=MAXRETRY)return;
+    case "retry":{const r=S.result,q=r.quiz;if((q.retryNo||0)>=maxR(q.bookId))return;
       if(!q.wrongMode){const meta={title:q.title,bookId:q.bookId,bookName:q.bookName,unitId:q.unitId,unitName:q.unitName,passage:q.passage||"",unitItems:q.unitItems};
         const items=r.type==="vocab"?r.wrong.map(x=>({w:x.w,m:x.m})):q.wrong.map(carry);
         launch(r.type,meta,items,(q.retryNo||0)+1);break;}
