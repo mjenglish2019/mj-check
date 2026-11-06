@@ -686,7 +686,7 @@ function vVocabMenu(){
   return header()+`<button class="ghost" data-act="home" style="align-self:flex-start">← 목록으로</button>
   <div class="stack"><p class="muted">${esc(b.name)}</p><h1>${esc(u.name)}</h1><p class="muted">${u.items.length}단어 · 통과 기준 ${passOf("vocab")}점</p></div>
   <div class="panel"><h2>1. <span class="mark">외우기</span></h2><p class="muted small">카드를 눌러 뜻을 확인하고, 모르는 단어만 다시 봐요.</p><button data-act="cards">카드로 외우기</button></div>
-  <div class="panel"><h2>2. <span class="mark">시험 보기</span></h2><p class="muted small">뜻 고르기와 스펠링 쓰기가 섞여 나와요. 틀린 단어는 다시 볼 수 있어요.</p>${(()=>{const l=lockMap()[b.id+"/"+u.id];return l&&l.state==="final"?`<button class="primary" data-act="review" data-v="${esc(b.id+"/"+u.id)}">조교 확인 — 틀린 단어 보기</button>`:`<button class="primary" data-act="vtest">시험 시작</button>`})()}</div>
+  <div class="panel"><h2>2. <span class="mark">시험 보기</span></h2><p class="muted small">${b.kinds==="mean"?"영어 단어를 보고 알맞은 뜻을 4개 중에서 골라요. 틀린 단어는 다시 볼 수 있어요.":"뜻 고르기와 스펠링 쓰기가 섞여 나와요. 틀린 단어는 다시 볼 수 있어요."}</p>${(()=>{const l=lockMap()[b.id+"/"+u.id];return l&&l.state==="final"?`<button class="primary" data-act="review" data-v="${esc(b.id+"/"+u.id)}">조교 확인 — 틀린 단어 보기</button>`:`<button class="primary" data-act="vtest">시험 시작</button>`})()}</div>
   <div class="panel"><h2>단어 목록</h2><div class="wlist">${u.items.map(x=>`<div><span class="en">${esc(x.w)}</span><span>${esc(x.m)}</span></div>`).join("")}</div></div>`;
 }
 
@@ -903,12 +903,12 @@ function aContent(){
 /* ---------- quiz builders ---------- */
 /* 재시험 때 순서·정답 번호가 앞 시험과 같지 않게 (2026-10-29 원장님) */
 const vLastPos={};
-function vocabItems(words,pool){
+function vocabItems(words,pool,meanOnly){
   const allM=pool.map(x=>x.m),key=ws=>ws.map(x=>x.w).join("|");
   let order=shuffle(words);
   for(let t=0;words.length>1&&key(order)===key(words)&&t<10;t++)order=shuffle(words);
   return order.map(x=>{
-    if(/~/.test(x.w)||Math.random()<.5){
+    if(/~/.test(x.w)||meanOnly||Math.random()<.5){
       const others=shuffle([...new Set(allM.filter(m=>m!==x.m))]).slice(0,3);
       let ch=shuffle([x.m].concat(others));
       for(let t=0;ch.length>1&&vLastPos[x.w]===ch.indexOf(x.m)&&t<10;t++)ch=shuffle(ch);
@@ -953,7 +953,8 @@ function tryStart(type,b,u){
 }
 function startVocabTest(words,meta){
   const pool=meta.unitItems&&meta.unitItems.length>=4?meta.unitItems:allVocabPool();
-  S.quiz=Object.assign({items:vocabItems(words,pool),i:0,correct:0,wrong:[],fb:null,type:"vocab"},meta);
+  const vb=meta.bookId?findBook(meta.bookId):null;
+  S.quiz=Object.assign({items:vocabItems(words,pool,!!(vb&&vb.kinds==="mean")),i:0,correct:0,wrong:[],fb:null,type:"vocab"},meta);
   awayInit(S.quiz);S.view="quiz";render();
 }
 function startQTest(type,b,u,items,retry){
