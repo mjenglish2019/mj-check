@@ -133,7 +133,7 @@ a.linkbtn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .a2hs{min-height:34px;padding:5px 11px;border-radius:999px;font-size:13.5px;font-weight:700;border-color:var(--accent);color:var(--accent);background:var(--surface);white-space:nowrap}
 .a2hs[aria-expanded="true"]{background:var(--accent);color:var(--accent-ink)}
 details summary{cursor:pointer}
-.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:10px;font-size:14.5px;z-index:9;max-width:calc(100% - 32px)}
+#aplay{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--paper);border-top:1px solid var(--line);padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}#aplay audio{display:block;width:100%;max-width:560px;margin:0 auto}body.has-aud #app{padding-bottom:84px}.toast{position:fixed;z-index:30;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:10px;font-size:14.5px;z-index:9;max-width:calc(100% - 32px)}
 .dta{min-height:64px;font-size:15px}
 html,body{overscroll-behavior-y:none}   /* 시험 중 화면을 아래로 당겨 새로고침되는 일을 막음 (2026-10-20) */
 .dk{min-width:5em;font-weight:700;color:var(--muted);font-size:14px;flex:none}
@@ -142,6 +142,7 @@ html,body{overscroll-behavior-y:none}   /* 시험 중 화면을 아래로 당겨
 
 <div class="wrap" id="app"><div class="panel"><p class="muted">교재를 불러오는 중이에요…</p></div></div>
 <div class="toast" id="toast" hidden></div>
+<div id="aplay" hidden><audio id="aud" controls preload="metadata" controlsList="nodownload" playsinline></audio></div>
 
 <script>
 (function(){
@@ -219,7 +220,7 @@ const MAXRETRY=3;
 function maxR(id){const b=id&&findBook(id);return (b&&b.retry)||MAXRETRY}
 function shufCh(items,bookId){const b=bookId&&findBook(bookId);if(!b||!b.shufChoices)return items;return items.map(x=>{if(!x.choices||x.kind==="fill")return x;const a=x.choices[x.answer],ch=shuffle(x.choices.slice());return Object.assign({},x,{choices:ch,answer:ch.indexOf(a)})})}
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-11-06d";
+const BUILD="2026-11-09b";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -266,7 +267,7 @@ function speak(w){try{const u=new SpeechSynthesisUtterance(w);u.lang="en-US";u.r
   if(usVoice){u.voice=usVoice;u.lang=usVoice.lang.replace("_","-")}
   speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){toast("이 기기에서는 발음 듣기가 안 돼요")}}
 function carry(it){const c=it.kind==="fill"?{kind:"fill",prompt:it.prompt,ctx:it.ctx,hint:it.hint,s:it.s,answers:it.answers,exp:it.exp}:{prompt:it.prompt,choices:it.choices,answer:it.answer,exp:it.exp};
-  if(it.passage)c.passage=it.passage;if(it.no)c.no=it.no;return c}
+  if(it.passage)c.passage=it.passage;if(it.no)c.no=it.no;if(it.audio)c.audio=it.audio;return c}
 /* 문항별 지문 (미니 모의고사, 2026-10-28): \n 줄바꿈 · [밑줄] · ___ 빈칸 */
 function ipass(h){return br(blankify(String(h).replace(/\( ([①②③④⑤]) \)/g,"(\u00a0$1\u00a0)")))}
 function chTxt(c,i){return c===NUM[i]?"":c}
@@ -673,7 +674,7 @@ function vHome(){
       ${!list.length?`<div class="empty">등록된 ${TYPES[t]} 교재가 없어요. 원장님께 말씀드려 주세요.</div>`
         :`<select id="bk" data-act="book">${list.map(x=>`<option value="${esc(x.id)}" ${x.id===sel?"selected":""}>${esc(x.name)}</option>`).join("")}</select>`}
     </div>
-    ${b?`<div class="units">${b.units.map(u=>{const key=b.id+"/"+u.id;return `<button class="unit" data-act="unit" data-v="${esc(u.id)}"><span class="name">${esc(u.name)}</span><span class="cnt">${t==="vocab"?unitCount(u)+"단어":Math.min(pickOf(t,b),unitCount(u))+"문항"}</span>${unitBadge(key,t)}</button>`}).join("")}</div>`:""}
+    ${b&&b.listen?b.units.map(u=>`<div class="panel"><p class="muted small" style="margin:0 0 6px">${esc(u.name)}</p><audio controls preload="none" controlsList="nodownload" playsinline src="${esc(u.audio)}" style="width:100%"></audio></div>`).join(""):b?`<div class="units">${b.units.map(u=>{const key=b.id+"/"+u.id;return `<button class="unit" data-act="unit" data-v="${esc(u.id)}"><span class="name">${esc(u.name)}</span><span class="cnt">${t==="vocab"?unitCount(u)+"단어":Math.min(pickOf(t,b),unitCount(u))+"문항"}</span>${unitBadge(key,t)}</button>`}).join("")}</div>`:""}
     ${t==="vocab"?(()=>{const n=wrongBook().length;return `<button class="wide" data-act="tab" data-v="wrong">내 오답 단어장 <span class="badge ${n?"bad":"none"}">${n}개</span></button>`})():""}`;
   }
   const tn=todayGroups().length;
@@ -775,7 +776,7 @@ function vReview(){
   let body="";
   if(l.type==="vocab")body=`<div class="panel"><div class="wlist">${items.map(x=>`<div><span class="en">${esc(x.w)}</span><span>${esc(x.m)}</span></div>`).join("")}</div></div>`;
   else body=(m.passage?`<div class="panel"><p class="muted small">지문</p><div class="passage" style="max-height:none">${esc(m.passage)}</div></div>`:"")+
-    items.map((it,i)=>(it.passage&&(i===0||items[i-1].passage!==it.passage)?`<div class="panel"><p class="muted small">지문</p><div class="passage" style="max-height:none">${ipass(it.passage)}</div></div>`:"")+(it.kind==="fill"
+    items.map((it,i)=>(it.passage&&(i===0||items[i-1].passage!==it.passage)?`<div class="panel"><p class="muted small">지문</p><div class="passage" style="max-height:none">${ipass(it.passage)}</div></div>`:"")+(it.audio&&(i===0||items[i-1].audio!==it.audio)?`<div class="panel"><p class="muted small">음원</p><audio controls preload="none" src="${esc(it.audio)}" style="width:100%"></audio></div>`:"")+(it.kind==="fill"
       ?`<div class="panel"><p class="muted small">${i+1}. ${esc(it.prompt)}</p>
         ${it.ctx?`<div class="prompt ${it.ctx.length>90?"long":""}">${br(esc(it.ctx))}</div>`:""}
         ${it.hint?`<p class="small"><b>조건</b> ${esc(it.hint)}</p>`:""}
@@ -949,7 +950,7 @@ function tryStart(type,b,u){
   if(l&&l.state==="final"){openReview(k);return}
   if(l&&l.state==="started"&&l.items){toast(l.retryNo?`재시험 ${l.retryNo}/${maxR(b.id)}을 다시 봐요`:"보던 시험을 처음부터 다시 봐요");launch(type,meta,l.items,l.retryNo||0);return}
   if(l&&l.state==="open"&&l.items){const n=(l.retryNo||0)+1;toast(`재시험 ${n}/${maxR(b.id)}을 봐요`);launch(type,meta,l.items,n);return}
-  const items=type==="vocab"?u.items:(b.ordered?u.items.slice():shuffle(u.items)).slice(0,pickOf(type,b)).map(x=>{const o=x.a?{kind:"fill",prompt:x.q,ctx:x.ctx||"",hint:x.hint||"",s:x.s,answers:x.a,exp:x.exp}:{prompt:x.q,choices:x.choices,answer:x.answer,exp:x.exp};if(x.passage)o.passage=x.passage;if(x.no)o.no=x.no;return o});
+  const items=type==="vocab"?u.items:(b.ordered?u.items.slice():shuffle(u.items)).slice(0,pickOf(type,b)).map(x=>{const o=x.a?{kind:"fill",prompt:x.q,ctx:x.ctx||"",hint:x.hint||"",s:x.s,answers:x.a,exp:x.exp}:{prompt:x.q,choices:x.choices,answer:x.answer,exp:x.exp};if(x.passage)o.passage=x.passage;if(x.no)o.no=x.no;if(x.audio)o.audio=x.audio;return o});
   launch(type,meta,type==="vocab"?items:shufCh(items,b.id),0);
 }
 function startVocabTest(words,meta){
@@ -1050,6 +1051,12 @@ async function saveResult(r){
 }
 
 /* ---------- render & events ---------- */
+/* 듣기 음원 (2026-11-09): 문항에 audio(주소)가 있으면 화면 아래 고정 플레이어로 재생. 같은 주소면 문제를 넘겨도 끊기지 않음 */
+function syncAudio(){const box=document.getElementById("aplay"),a=document.getElementById("aud");if(!box||!a)return;
+  let src="";if(S.view==="quiz"&&S.quiz){const it=S.quiz.items[S.quiz.i];if(it&&it.audio)src=it.audio}
+  if(!src){if(!box.hidden){try{a.pause();a.removeAttribute("src");a.load()}catch(e){}box.hidden=true;document.body.classList.remove("has-aud")}return}
+  box.hidden=false;document.body.classList.add("has-aud");
+  if(a.getAttribute("src")!==src){try{a.pause()}catch(e){}a.setAttribute("src",src);a.load()}}
 function render(){
   let h="";
   if(!S.content){return}
@@ -1064,6 +1071,7 @@ function render(){
   else if(S.view==="review")h=vReview();
   else if(S.view==="diary")h=vDiary();
   app.innerHTML=h;
+  syncAudio();
 }
 function readForm(){
   const f=S.admin.form,g=id=>document.getElementById(id);
