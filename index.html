@@ -220,7 +220,7 @@ const MAXRETRY=3;
 function maxR(id){const b=id&&findBook(id);return (b&&b.retry)||MAXRETRY}
 function shufCh(items,bookId){const b=bookId&&findBook(bookId);if(!b||!b.shufChoices)return items;return items.map(x=>{if(!x.choices||x.kind==="fill")return x;const a=x.choices[x.answer],ch=shuffle(x.choices.slice());return Object.assign({},x,{choices:ch,answer:ch.indexOf(a)})})}
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-11-09e";
+const BUILD="2026-11-09f";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
