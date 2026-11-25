@@ -1,0 +1,261 @@
+{
+ "_설명": "모의고사 정답. grades.<g1|g2|g3>.rounds.<1~16> = {title(선택), key:'35241 53214 …'(1~5), three:[3점 문항 번호], listen(듣기 문항 수, 45문항이면 생략 시 17)}. key가 비어 있으면 학생 화면에 '정답 준비 중'.",
+ "version": 1,
+ "grades": {
+  "g1": {
+   "name": "고1",
+   "rounds": {
+    "1": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "2": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "3": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "4": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "5": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "6": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "7": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "8": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "9": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "10": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "11": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "12": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "13": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "14": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "15": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "16": {
+     "title": "",
+     "key": "",
+     "three": []
+    }
+   }
+  },
+  "g2": {
+   "name": "고2",
+   "rounds": {
+    "1": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "2": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "3": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "4": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "5": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "6": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "7": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "8": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "9": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "10": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "11": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "12": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "13": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "14": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "15": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "16": {
+     "title": "",
+     "key": "",
+     "three": []
+    }
+   }
+  },
+  "g3": {
+   "name": "고3",
+   "rounds": {
+    "1": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "2": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "3": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "4": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "5": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "6": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "7": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "8": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "9": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "10": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "11": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "12": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "13": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "14": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "15": {
+     "title": "",
+     "key": "",
+     "three": []
+    },
+    "16": {
+     "title": "",
+     "key": "",
+     "three": []
+    }
+   }
+  }
+ }
+}
