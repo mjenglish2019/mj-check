@@ -234,7 +234,7 @@ const MAXRETRY=3;
 function maxR(id){const b=id&&findBook(id);return (b&&b.retry)||MAXRETRY}
 function shufCh(items,bookId){const b=bookId&&findBook(bookId);if(!b||!b.shufChoices)return items;return items.map(x=>{if(!x.choices||x.kind==="fill")return x;const a=x.choices[x.answer],ch=shuffle(x.choices.slice());return Object.assign({},x,{choices:ch,answer:ch.indexOf(a)})})}
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-11-25b";
+const BUILD="2026-11-25c";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"&&S.view!=="omr"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -522,7 +522,8 @@ function mockDoneOn(days){if(!S.me)return [];const h=lsGet(stuKey("hist"),{}),ou
   return out.sort((a,b)=>a.h.at<b.h.at?-1:1)}
 function mockLines(x){const g=x.g,L=[`■ 모의고사 · ${mockLabel(x.r)}${x.r.title?` (${x.r.title})`:""}`];
   L.push(`  ${mockScore(g)} (${g.correct}/${g.total}문항)${g.lt?` · 듣기 ${g.lc}/${g.lt} · 독해 ${g.rc}/${g.rt}`:""}`);
-  L.push(g.wrong.length?`  틀린 번호: ${g.wrong.join(", ")}`:"  모두 맞았어요!");return L}
+  L.push(g.wrong.length?`  틀린 번호: ${g.wrong.join(", ")}`:"  모두 맞았어요!");
+  if(g.away)L.push(`  ⚠ OMR 입력 중 ${awayTxt(g.away,g.awaySec||0)}${g.auto?" → 자동 제출":""}`);return L}
 function mockTab(){
   if(!MOCK){loadMock().then(()=>{if(S.view==="home"&&S.tab==="mock")render()}).catch(()=>{S.mockErr=true;if(S.view==="home"&&S.tab==="mock")render()});
     return `<div class="panel"><div class="empty">${S.mockErr?"모의고사를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.":"불러오는 중이에요…"}</div></div>`}
@@ -551,7 +552,8 @@ function vOmr(){
   if(h){const g=h.mock,ans=String(g.ans||"").split("").map(Number);
     return header()+back+head+`<div class="panel today-head"><p class="muted small">${esc(S.me.name)} · ${mockAtTxt(h.at)} 제출</p>
       <div class="today-name tnum">${esc(mockScore(g))}</div><p class="small tnum"><b>${g.correct}/${g.total}문항</b>${g.lt?` · 듣기 ${g.lc}/${g.lt} · 독해 ${g.rc}/${g.rt}`:""}</p>
-      ${g.wrong.length?`<p class="small" style="color:var(--bad)"><b>틀린 번호</b> ${g.wrong.join(", ")}</p>`:`<p class="small ok-t"><b>모두 맞았어요!</b></p>`}</div>
+      ${g.wrong.length?`<p class="small" style="color:var(--bad)"><b>틀린 번호</b> ${g.wrong.join(", ")}</p>`:`<p class="small ok-t"><b>모두 맞았어요!</b></p>`}
+      ${g.away?`<p class="small" style="color:var(--bad)"><b>⚠ ${awayTxt(g.away,g.awaySec||0)}${g.auto?" → 자동 제출":""}</b></p>`:""}</div>
       <button class="primary wide" data-act="sharetoday">부모님께 카톡으로 보내기</button>
       <p class="muted small" style="margin-top:-8px">오늘 본 다른 시험 결과와 함께 보내져요. 정답과 풀이는 수업 시간에 확인해요.</p>
       <h2>내가 낸 답안</h2>${omrRows(r.n,r.listen,ans,{wrong:new Set(g.wrong)})}`}
@@ -560,19 +562,44 @@ function vOmr(){
       ${miss.length?`<p class="small" style="color:var(--bad)"><b>안 칠한 번호 ${miss.length}개: ${miss.slice(0,20).join(", ")}${miss.length>20?" …":""}</b><br>안 칠한 번호는 틀린 것으로 채점돼요.</p>`:`<p class="small">${r.n}문항을 모두 칠했어요.</p>`}
       <p class="small"><b>제출하면 다시 고칠 수 없어요.</b> 시험지에 표시한 답과 같은지 한 번 더 확인해요.</p>
       <div class="row"><button class="primary grow" data-act="mocksend">제출하기</button><button class="grow" data-act="mockcancel">다시 확인</button></div></div>`:"";
-  return header()+back+head+`<div class="note">번호를 눌러 칠하고, 잘못 칠했으면 <b style="color:var(--ink)">다른 번호를 누르거나 같은 번호를 한 번 더</b> 누르면 지워져요. 칠한 답은 이 휴대폰에 저장돼요.</div>`+
+  const aw=omrAway(r);
+  return header()+back+head+`<div class="note" style="background:var(--bad-bg);color:var(--bad)"><b>⚠ 제출할 때까지 앱 밖으로 나가지 마세요.</b> 다른 앱·카메라·홈 화면으로 나가면 기록되고, <b>${OMR_AWAY_MAX}번 나가면 그때까지 칠한 답으로 자동 제출</b>돼요.${aw.n?`<br><b>지금까지 ${aw.n}번 나갔어요. 한 번 더 나가면 자동 제출돼요.</b>`:""}</div><div class="note">번호를 눌러 칠하고, 잘못 칠했으면 <b style="color:var(--ink)">다른 번호를 누르거나 같은 번호를 한 번 더</b> 누르면 지워져요. 칠한 답은 이 휴대폰에 저장돼요.</div>`+
     omrRows(r.n,r.listen,ans,{edit:true})+conf+
     `<div class="omr-foot"><span class="tnum"><b>${done}</b>/${r.n} 칠함</span><button class="primary" data-act="mockask">제출하기</button></div>`;
 }
-function mockSubmit(){
-  const r=mockRound(S.omr&&S.omr.id);if(!r||!r.n||mockRec(r))return;
+/* 화면 이탈 (2026-11-25 원장님 요청 — AI로 답 찾기 방지): OMR을 열어 칠하는 중(마지막 동작 2시간 안, 제출 전)에 앱 밖으로 나가면 횟수 기록.
+   1번째는 경고만, 2번째 나가는 순간 그때까지 칠한 답으로 자동 제출. 목록 화면으로 돌아가 있어도 칠하던 회차가 있으면 셈. */
+const OMR_AWAY_MAX=2;
+function omrAct(){if(!S.me)return null;const a=lsGet(stuKey("mockact"),null);if(!a||!a.id||Date.now()-(a.at||0)>7200000)return null;
+  const r=mockRound(a.id);return r&&r.n&&!mockRec(r)?r:null}
+function omrTouch(r){lsSet(stuKey("mockact"),{id:r.id,at:Date.now()})}
+function omrAway(r){return lsGet(stuKey("mockaway_"+r.id),{n:0,sec:0})}
+let omrAwayAt=0,omrAwayId="";
+function omrLeave(){if(omrAwayAt)return;const r=omrAct();if(!r)return;omrAwayAt=Date.now();omrAwayId=r.id;
+  const a=omrAway(r);a.n++;lsSet(stuKey("mockaway_"+r.id),a);
+  if(a.n>=OMR_AWAY_MAX)mockSubmit(r.id,true)}
+function omrBack(){if(!omrAwayAt)return;const sec=Math.max(1,Math.round((Date.now()-omrAwayAt)/1000)),id=omrAwayId;omrAwayAt=0;omrAwayId="";
+  const r=mockRound(id);if(!r)return;const a=omrAway(r);a.sec+=sec;lsSet(stuKey("mockaway_"+r.id),a);
+  const h=mockRec(r);
+  if(h&&h.mock.auto){if(!h.mock.awayDone){const hs=lsGet(stuKey("hist"),{}),e=hs[mockHk(r)];if(e&&e.mock){e.mock.awaySec=a.sec;e.mock.awayDone=1;lsSet(stuKey("hist"),hs)}}
+    S.omr={id:r.id,confirm:false};S.view="omr";toast(`화면을 ${a.n}번 벗어나서 자동으로 제출됐어요`);sync()}
+  else toast(`OMR 중에 화면을 벗어났어요 (${a.n}회). 한 번 더 나가면 자동 제출돼요`);
+  if(S.view!=="quiz"&&S.view!=="cards")render()}
+document.addEventListener("visibilitychange",()=>{if(document.hidden)omrLeave();else omrBack()});
+window.addEventListener("pagehide",omrLeave);
+window.addEventListener("blur",()=>{setTimeout(()=>{if(!document.hasFocus())omrLeave()},300)});
+window.addEventListener("focus",()=>{if(!document.hidden)omrBack()});
+function mockSubmit(id,auto){
+  const r=mockRound(id||(S.omr&&S.omr.id));if(!r||!r.n||mockRec(r))return;
   const ans=mockDraft(r),g=mockGrade(r,ans),at=new Date().toISOString(),pct=g.scaled?g.score:Math.round(g.score*100/g.max);
-  g.id=r.id;g.ans=ans.join("");
+  const aw=omrAway(r);g.id=r.id;g.ans=ans.join("");g.away=aw.n||0;g.awaySec=aw.sec||0;if(auto)g.auto=true;
   const hs=lsGet(stuKey("hist"),{});hs[mockHk(r)]={pct,pass:true,at,mock:g};lsSet(stuKey("hist"),hs);
   if(useApi()){const ob=outbox();ob.push({at,type:"모의고사",mock:true,bookName:mockLabel(r)+(r.title?` (${r.title})`:""),unitName:mockScore(g),
-    pct,pass:true,correct:g.correct,total:g.total,wrong:g.wrong.length?["틀린 번호 "+g.wrong.join(", ")]:[],wrongN:g.wrong.length});lsSet(stuKey("outbox"),ob.slice(-200))}
-  try{localStorage.removeItem(stuKey("mockans_"+r.id))}catch(e){}
-  S.omr.confirm=false;toast("제출했어요");render();window.scrollTo(0,0);sync();
+    pct,pass:true,correct:g.correct,total:g.total,wrong:(g.wrong.length?["틀린 번호 "+g.wrong.join(", ")]:[]).concat(auto?["화면 이탈로 자동 제출"]:[]),wrongN:g.wrong.length,
+    away:g.away,awaySec:g.awaySec});lsSet(stuKey("outbox"),ob.slice(-200))}
+  try{localStorage.removeItem(stuKey("mockans_"+r.id));localStorage.removeItem(stuKey("mockact"))}catch(e){}
+  if(auto)return;   /* 자동 제출은 화면이 가려진 상태라 돌아왔을 때(omrBack) 보여 주고 보냄 */
+  if(S.omr)S.omr.confirm=false;toast("제출했어요");render();window.scrollTo(0,0);sync();
 }
 /* 앱 설치 (2026-10-13 앱 버전): 안드로이드 크롬은 설치 창을 바로 띄우고, 나머지는 순서 안내 */
 let installEvt=null;
@@ -737,7 +764,8 @@ function vToday(){
   :mk.length?"":`<div class="panel"><div class="empty">오늘 본 시험이 아직 없어요.</div></div>`}
   ${mk.length?`<div class="units">${mk.map(x=>`<button data-act="omr" data-v="${esc(x.r.id)}" class="unit trow"><div class="grow"><div class="name">모의고사 · ${esc(mockLabel(x.r))}</div>
       <div class="muted small tnum">${esc(mockScore(x.g))} · ${x.g.correct}/${x.g.total}문항${x.g.lt?` · 듣기 ${x.g.lc}/${x.g.lt} · 독해 ${x.g.rc}/${x.g.rt}`:""} · ${hm(x.h.at)} 제출</div>
-      ${x.g.wrong.length?`<div class="small" style="color:var(--bad)">틀린 번호: ${x.g.wrong.join(", ")}</div>`:""}</div><span class="badge ok">제출</span></button>`).join("")}</div>`:""}
+      ${x.g.wrong.length?`<div class="small" style="color:var(--bad)">틀린 번호: ${x.g.wrong.join(", ")}</div>`:""}
+      ${x.g.away?`<div class="small" style="color:var(--bad)"><b>⚠ ${awayTxt(x.g.away,x.g.awaySec||0)}${x.g.auto?" → 자동 제출":""}</b></div>`:""}</div><span class="badge ok">제출</span></button>`).join("")}</div>`:""}
   ${useApi()?hwPanel():""}
   ${useApi()?syncNote():(gs.length?`<a class="linkbtn" href="${esc(submitUrl())}" target="_blank" rel="noopener" data-act="sent">원장님께 제출하기</a>
   ${(()=>{const t=lsGet(stuKey("sent_"+dayKey()),null);return t?`<p class="small ok-t" style="margin-top:-8px"><b>✓ 오늘 ${esc(t)}에 제출했어요.</b> 공부를 더 했으면 한 번 더 눌러요.</p>`
@@ -1245,10 +1273,10 @@ app.addEventListener("click",async e=>{
     case "syncnow":sync();break;
     case "mgrade":S.sel.mockGrade=v;lsSet(stuKey("sel"),S.sel);lsSet(stuKey("selAt"),Date.now());render();break;
     case "omr":{if(!MOCK){try{await loadMock()}catch(err){toast("모의고사를 불러오지 못했어요");return}}const r=mockRound(v);if(!r||!r.n)return;
-      if(r.g!==S.sel.mockGrade){S.sel.mockGrade=r.g}S.omr={id:v,confirm:false};S.view="omr";render();window.scrollTo(0,0);break;}
+      if(r.g!==S.sel.mockGrade){S.sel.mockGrade=r.g}S.omr={id:v,confirm:false};if(!mockRec(r))omrTouch(r);S.view="omr";render();window.scrollTo(0,0);break;}
     case "mockback":S.tab="mock";S.view="home";render();window.scrollTo(0,0);break;
     case "mbub":{const r=mockRound(S.omr&&S.omr.id);if(!r||mockRec(r))return;const a=mockDraft(r),q=Number(el.dataset.q),k=Number(v);
-      a[q]=a[q]===k?0:k;lsSet(stuKey("mockans_"+r.id),a);S.omr.confirm=false;render();break;}
+      a[q]=a[q]===k?0:k;lsSet(stuKey("mockans_"+r.id),a);omrTouch(r);S.omr.confirm=false;render();break;}
     case "mockask":S.omr.confirm=true;render();setTimeout(()=>{const p=document.querySelector('[data-act="mocksend"]');if(p)p.scrollIntoView({block:"center"})},30);break;
     case "mockcancel":S.omr.confirm=false;render();break;
     case "mocksend":mockSubmit();break;
