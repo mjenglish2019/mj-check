@@ -234,7 +234,7 @@ const MAXRETRY=3;
 function maxR(id){const b=id&&findBook(id);return (b&&b.retry)||MAXRETRY}
 function shufCh(items,bookId){const b=bookId&&findBook(bookId);if(!b||!b.shufChoices)return items;return items.map(x=>{if(!x.choices||x.kind==="fill")return x;const a=x.choices[x.answer],ch=shuffle(x.choices.slice());return Object.assign({},x,{choices:ch,answer:ch.indexOf(a)})})}
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-11-25d";
+const BUILD="2026-11-25e";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"&&S.view!=="omr"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -244,13 +244,18 @@ function awayInit(q){q.away=0;q.awaySec=0;const k=awayKey(q),l=k&&lockMap()[k];
   if(l&&l.state==="started"&&(l.away||l.awaySec)&&(l.retryNo||0)===(q.retryNo||0)){q.away=l.away||0;q.awaySec=l.awaySec||0}}
 function awaySave(q){const k=awayKey(q);if(!k)return;const m=lockMap();if(m[k]&&m[k].state==="started"){setLock(k,Object.assign({},m[k],{away:q.away,awaySec:q.awaySec}))}}
 function awayTxt(n,sec){return n?`화면 이탈 ${n}회`+(sec>=60?` (${Math.round(sec/60)}분)`:` (${sec}초)`):""}
-document.addEventListener("visibilitychange",()=>{
-  const q=S.quiz;if(S.view!=="quiz"||!q)return;
-  if(document.hidden){awayAt=Date.now();q.away=(q.away||0)+1;q.awaySec=q.awaySec||0;q.awayPend=true;awaySave(q)}
-  else if(awayAt){const sec=Math.round((Date.now()-awayAt)/1000);awayAt=0;
-    if(q.awayPend){q.awayPend=false;if(sec<1){q.away=Math.max(0,q.away-1)}else{q.awaySec+=sec;toast(`시험 중에 화면을 벗어났어요 (${q.away}회). 기록에 남아요`)}
-      awaySave(q);render()}}
-});
+/* 2026-11-25 강화: 다른 앱으로 넘어갈 때(visibilitychange)뿐 아니라, 화면 위에 겹쳐 뜨는 창(Gemini·서클 투 서치·
+   분할 화면 등)으로 초점이 넘어갈 때(blur)와 페이지를 떠날 때(pagehide)도 1회로 셈. 같은 이탈은 한 번만 셈 */
+function quizLeave(){const q=S.quiz;if(S.view!=="quiz"||!q||awayAt)return;
+  awayAt=Date.now();q.away=(q.away||0)+1;q.awaySec=q.awaySec||0;q.awayPend=true;awaySave(q)}
+function quizBack(){if(!awayAt)return;const q=S.quiz,sec=Math.round((Date.now()-awayAt)/1000);awayAt=0;
+  if(!q||!q.awayPend)return;q.awayPend=false;
+  if(sec<1){q.away=Math.max(0,q.away-1)}else{q.awaySec+=sec;toast(`시험 중에 화면을 벗어났어요 (${q.away}회). 기록에 남아요`)}
+  awaySave(q);if(S.view==="quiz")render()}
+document.addEventListener("visibilitychange",()=>{if(document.hidden)quizLeave();else quizBack()});
+window.addEventListener("pagehide",quizLeave);
+window.addEventListener("blur",()=>{setTimeout(()=>{if(!document.hasFocus())quizLeave()},300)});
+window.addEventListener("focus",()=>{if(!document.hidden)quizBack()});
 function unitCount(u){return u.items?u.items.length:(u.n||0)}
 function metaOf(b){return {id:b.id,type:b.type,name:b.name,units:b.units.map(u=>({id:u.id,name:u.name,n:unitCount(u)}))}}
 const loading={};
@@ -851,7 +856,7 @@ function vCards(){
 function showAns(q){return !!(q&&(q.wrongMode||(q.retryNo||0)>=maxR(q.bookId||(q.quiz&&q.quiz.bookId))))}
 function vQuiz(){
   const q=S.quiz,it=q.items[q.i];
-  const top=`<div class="qmeta"><span>${esc(q.title)}</span><span>${q.away?`<b style="color:var(--bad)">이탈 ${q.away}</b> · `:""}${q.i+1} / ${q.items.length}</span></div><div class="progress"><i style="width:${(q.i/q.items.length)*100}%"></i></div>`;
+  const top=`<div class="qmeta"><span>${esc(q.title)}</span><span>${q.away?`<b style="color:var(--bad)">이탈 ${q.away}</b> · `:""}${q.i+1} / ${q.items.length}</span></div><div class="progress"><i style="width:${(q.i/q.items.length)*100}%"></i></div><p class="small" style="margin:6px 0 0;color:var(--bad)">시험 중 다른 앱·AI 창을 열면 화면 이탈로 기록돼요.</p>`;
   let main="";
   const fb=q.fb;
   if(it.kind==="arrange"){
