@@ -234,7 +234,7 @@ const MAXRETRY=3;
 function maxR(id){const b=id&&findBook(id);return (b&&b.retry)||MAXRETRY}
 function shufCh(items,bookId){const b=bookId&&findBook(bookId);if(!b||!b.shufChoices)return items;return items.map(x=>{if(!x.choices||x.kind==="fill")return x;const a=x.choices[x.answer],ch=shuffle(x.choices.slice());return Object.assign({},x,{choices:ch,answer:ch.indexOf(a)})})}
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-11-25c";
+const BUILD="2026-11-25d";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
   if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"&&S.view!=="omr"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
@@ -503,7 +503,8 @@ function loadMock(){if(MOCK)return Promise.resolve(MOCK);if(mockLoading)return m
 function mockKeyArr(s){const C={"①":1,"②":2,"③":3,"④":4,"⑤":5},a=[];for(const ch of String(s||""))if(C[ch])a.push(C[ch]);else if(ch>="1"&&ch<="5")a.push(Number(ch));return a}
 function mockGradeName(g){const x=MOCK_GRADES.find(y=>y[0]===g);return x?x[1]:g}
 function mockRounds(g){const G=MOCK&&(MOCK.grades||{})[g];const out=[];for(let no=1;no<=16;no++){const r=(G&&G.rounds&&G.rounds[no])||{};const key=mockKeyArr(r.key);
-  out.push({g,no,id:g+"-"+no,title:r.title||"",key,n:key.length,three:(r.three||[]).map(Number).filter(x=>x>=1&&x<=key.length),listen:key.length?(r.listen!=null?Number(r.listen):(key.length===45?17:0)):0})}return out}
+  const st=Number(r.start)||1;   /* 첫 문항 번호(독해만 보는 회차는 18) */
+  out.push({g,no,id:g+"-"+no,title:r.title||"",key,n:key.length,start:st,three:(r.three||[]).map(Number).filter(x=>x>=st&&x<st+key.length),listen:key.length?(r.listen!=null?Number(r.listen):(key.length===45?17:0)):0})}return out}
 function mockRound(id){const [g,no]=String(id).split("-");return mockRounds(g)[Number(no)-1]||null}
 function mockHk(r){return "mock-"+r.g+"/r"+String(r.no).padStart(2,"0")}
 function mockLabel(r){return `${mockGradeName(r.g)} 모의고사 ${r.no}회`}
@@ -511,7 +512,7 @@ function mockRec(r){const h=lsGet(stuKey("hist"),{})[mockHk(r)];if(!h||!h.mock||
   const id=S.me.id||S.me.name,up=RESETS.filter(x=>x&&x.mock===r.id&&(x.id===id||x.id===S.me.name)&&x.upto).reduce((a,x)=>Math.max(a,Date.parse(x.upto)||0),0);
   return up&&Date.parse(h.at)<up?null:h}
 function mockGrade(r,ans){const t3=new Set(r.three),has3=r.three.length>0;let sc=0,mx=0,c=0,lc=0;const wrong=[];
-  for(let i=0;i<r.n;i++){const p=has3?(t3.has(i+1)?3:2):1,ok=ans[i]===r.key[i];mx+=p;if(ok){sc+=p;c++;if(i<r.listen)lc++}else wrong.push(i+1)}
+  for(let i=0;i<r.n;i++){const no=r.start+i,p=has3?(t3.has(no)?3:2):1,ok=ans[i]===r.key[i];mx+=p;if(ok){sc+=p;c++;if(i<r.listen)lc++}else wrong.push(no)}
   return {score:has3?sc:(r.n?Math.round(c*100/r.n):0),max:has3?mx:100,scaled:!has3,correct:c,total:r.n,lc,lt:r.listen,rc:c-lc,rt:r.n-r.listen,wrong}}
 function mockScore(g){return g.scaled?`환산 ${g.score}점`:g.max===100?`${g.score}점`:`${g.score}/${g.max}점`}
 function mockDraft(r){const a=lsGet(stuKey("mockans_"+r.id),[]);const out=[];for(let i=0;i<r.n;i++)out.push(Number(a[i])||0);return out}
@@ -536,18 +537,18 @@ function mockTab(){
       <span class="cnt">${h?mockAtTxt(h.at):dr?dr+"개 칠함":r.n+"문항"}</span>${h?`<span class="badge ok">${esc(mockScore(h.mock))}</span>`:`<span class="badge none">안 봄</span>`}</button>`
     :`<div class="unit" style="opacity:.55"><span class="name">${r.no}회</span><span class="cnt">정답 준비 중</span></div>`}).join("")}</div>`;
 }
-function omrRows(n,listen,ansArr,opt){opt=opt||{};let h="";
+function omrRows(n,listen,ansArr,opt){opt=opt||{};let h="";const st=opt.start||1;
   for(let i=0;i<n;i++){
-    if(listen&&(i===0||i===listen))h+=`<div class="omr-sec">${i===0?`듣기 1~${listen}번`:`독해 ${listen+1}~${n}번`}</div>`;
-    const a=ansArr[i]||0,wr=opt.wrong&&opt.wrong.has(i+1);
-    h+=`<div class="omr-row${(i+1)%5===0?" g5":""}${wr?" wr":""}${!a&&opt.edit?" empty":""}"><span class="omr-no">${i+1}</span><span class="omr-bubs">${[1,2,3,4,5].map(k=>
-      opt.edit?`<button class="bub" data-act="mbub" data-q="${i}" data-v="${k}" aria-pressed="${a===k}" aria-label="${i+1}번 ${k}">${k}</button>`
+    if(listen&&(i===0||i===listen))h+=`<div class="omr-sec">${i===0?`듣기 ${st}~${st+listen-1}번`:`독해 ${st+listen}~${st+n-1}번`}</div>`;
+    const no=st+i,a=ansArr[i]||0,wr=opt.wrong&&opt.wrong.has(no);
+    h+=`<div class="omr-row${no%5===0?" g5":""}${wr?" wr":""}${!a&&opt.edit?" empty":""}"><span class="omr-no">${no}</span><span class="omr-bubs">${[1,2,3,4,5].map(k=>
+      opt.edit?`<button class="bub" data-act="mbub" data-q="${i}" data-v="${k}" aria-pressed="${a===k}" aria-label="${no}번 ${k}">${k}</button>`
       :`<span class="bub${a===k?" on":""}">${k}</span>`).join("")}</span>${wr?`<span class="omr-x">✗</span>`:opt.wrong?`<span class="omr-x ok">○</span>`:""}</div>`}
   return `<div class="omr">${h}</div>`}
 function vOmr(){
   const r=MOCK&&mockRound(S.omr&&S.omr.id);if(!r||!r.n){S.view="home";return vHome()}
   const back=`<button class="ghost" data-act="mockback" style="align-self:flex-start">← 모의고사 목록</button>`;
-  const head=`<div class="stack"><p class="muted small">${r.n}문항${r.listen?` (듣기 ${r.listen} · 독해 ${r.n-r.listen})`:""}${r.title?" · "+esc(r.title):""}</p><h1>${esc(mockLabel(r))}</h1></div>`;
+  const head=`<div class="stack"><p class="muted small">${r.n}문항${r.start>1?` (${r.start}~${r.start+r.n-1}번)`:""}${r.listen?` (듣기 ${r.listen} · 독해 ${r.n-r.listen})`:""}${r.title?" · "+esc(r.title):""}</p><h1>${esc(mockLabel(r))}</h1></div>`;
   const h=mockRec(r);
   if(h){const g=h.mock,ans=String(g.ans||"").split("").map(Number);
     return header()+back+head+`<div class="panel today-head"><p class="muted small">${esc(S.me.name)} · ${mockAtTxt(h.at)} 제출</p>
@@ -556,15 +557,15 @@ function vOmr(){
       ${g.away?`<p class="small" style="color:var(--bad)"><b>⚠ ${awayTxt(g.away,g.awaySec||0)}${g.auto?" → 자동 제출":""}</b></p>`:""}</div>
       <button class="primary wide" data-act="sharetoday">부모님께 카톡으로 보내기</button>
       <p class="muted small" style="margin-top:-8px">오늘 본 다른 시험 결과와 함께 보내져요. 정답과 풀이는 수업 시간에 확인해요.</p>
-      <h2>내가 낸 답안</h2>${omrRows(r.n,r.listen,ans,{wrong:new Set(g.wrong)})}`}
-  const ans=mockDraft(r),done=ans.filter(Boolean).length,miss=[];ans.forEach((a,i)=>{if(!a)miss.push(i+1)});
+      <h2>내가 낸 답안</h2>${omrRows(r.n,r.listen,ans,{wrong:new Set(g.wrong),start:r.start})}`}
+  const ans=mockDraft(r),done=ans.filter(Boolean).length,miss=[];ans.forEach((a,i)=>{if(!a)miss.push(r.start+i)});
   const conf=S.omr.confirm?`<div class="panel" style="border-color:var(--accent)"><h2>제출할까요?</h2>
       ${miss.length?`<p class="small" style="color:var(--bad)"><b>안 칠한 번호 ${miss.length}개: ${miss.slice(0,20).join(", ")}${miss.length>20?" …":""}</b><br>안 칠한 번호는 틀린 것으로 채점돼요.</p>`:`<p class="small">${r.n}문항을 모두 칠했어요.</p>`}
       <p class="small"><b>제출하면 다시 고칠 수 없어요.</b> 시험지에 표시한 답과 같은지 한 번 더 확인해요.</p>
       <div class="row"><button class="primary grow" data-act="mocksend">제출하기</button><button class="grow" data-act="mockcancel">다시 확인</button></div></div>`:"";
   const aw=omrAway(r);
   return header()+back+head+`<div class="note" style="background:var(--bad-bg);color:var(--bad)"><b>⚠ 제출할 때까지 앱 밖으로 나가지 마세요.</b> 다른 앱·카메라·홈 화면으로 나가면 기록되고, <b>${OMR_AWAY_MAX}번 나가면 그때까지 칠한 답으로 자동 제출</b>돼요.${aw.n?`<br><b>지금까지 ${aw.n}번 나갔어요. 한 번 더 나가면 자동 제출돼요.</b>`:""}</div><div class="note">번호를 눌러 칠하고, 잘못 칠했으면 <b style="color:var(--ink)">다른 번호를 누르거나 같은 번호를 한 번 더</b> 누르면 지워져요. 칠한 답은 이 휴대폰에 저장돼요.</div>`+
-    omrRows(r.n,r.listen,ans,{edit:true})+conf+
+    omrRows(r.n,r.listen,ans,{edit:true,start:r.start})+conf+
     `<div class="omr-foot"><span class="tnum"><b>${done}</b>/${r.n} 칠함</span><button class="primary" data-act="mockask">제출하기</button></div>`;
 }
 /* 화면 이탈 (2026-11-25 원장님 요청 — AI로 답 찾기 방지): OMR을 열어 칠하는 중(마지막 동작 2시간 안, 제출 전)에 앱 밖으로 나가면 횟수 기록.
