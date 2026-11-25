@@ -16,7 +16,7 @@
  */
 
 var SHEET_STU = "학생", SHEET_RES = "결과", SHEET_TODAY = "오늘", SHEET_STATE = "상태";
-var RES_HEAD = ["시간", "아이디", "이름", "구분", "교재", "단원", "점수", "맞은 수", "결과", "재시험", "틀린 것", "화면 이탈", "조교 확인 영작"];
+var RES_HEAD = ["시간", "아이디", "이름", "구분", "교재", "단원", "점수", "맞은 수", "결과", "재시험", "틀린 것", "화면 이탈", "조교 확인 영작", "걸린 시간"];
 var CHUNK = 40000;          // 셀 하나에 넣는 글자 수(시트 한도 5만 자보다 작게)
 var MAX_FAIL = 10;          // 비밀번호 10번 틀리면 10분 잠금
 
@@ -56,7 +56,7 @@ function 처음설정() {
   if (!t) {
     t = ss.insertSheet(SHEET_TODAY);
     t.getRange("A1").setFormula(
-      "=IFERROR(QUERY('" + SHEET_RES + "'!A:M,\"select * where A >= date '\"&TEXT(TODAY(),\"yyyy-mm-dd\")&\"' order by A desc\",1),\"오늘 결과가 아직 없어요\")");
+      "=IFERROR(QUERY('" + SHEET_RES + "'!A:N,\"select * where A >= date '\"&TEXT(TODAY(),\"yyyy-mm-dd\")&\"' order by A desc\",1),\"오늘 결과가 아직 없어요\")");
     t.getRange("A:A").setNumberFormat("hh:mm");
   }
   var st = ss.getSheetByName(SHEET_STATE);
@@ -128,6 +128,7 @@ function handle_(q) {
       merged.rids = rids.slice(-400);
       if (rows.length) {
         var sh = sheet_(SHEET_RES);
+        headFix_(sh);
         sh.getRange(sh.getLastRow() + 1, 1, rows.length, RES_HEAD.length).setValues(rows);
       }
       saveState_(me.id, merged);
@@ -299,6 +300,7 @@ function txt_(s) {
   s = String(s == null ? "" : s).slice(0, 3000);
   return /^[=+\-@]/.test(s) ? "'" + s : s;
 }
+function dur_(n) { n = Math.round(Number(n) || 0); var m = Math.floor(n / 60), s = n % 60; return m ? (s ? m + "분 " + s + "초" : m + "분") : s + "초"; }
 function sec_(n) { n = Number(n) || 0; return n >= 60 ? Math.round(n / 60) + "분" : n + "초"; }
 function resRow_(me, r) {
   var T = { vocab: "단어", grammar: "문법", reading: "독해", naesin: "내신" };
@@ -307,7 +309,17 @@ function resRow_(me, r) {
   var d = new Date(r.at);
   return [isNaN(d) ? new Date() : d, txt_(me.id), txt_(me.name), T[r.type] || txt_(r.type), txt_(r.bookName), txt_(r.unitName),
     Number(r.pct) || 0, txt_((r.correct || 0) + "/" + (r.total || 0)), st, r.retryNo ? r.retryNo + "차" : "",
-    txt_(wrong), r.away ? r.away + "회 (" + sec_(r.awaySec) + ")" : "", txt_((r.pend || []).join(" / "))];
+    txt_(wrong), r.away ? r.away + "회 (" + sec_(r.awaySec) + ")" : "", txt_((r.pend || []).join(" / ")),
+    r.sec ? dur_(r.sec) + (r.fast ? " ⚡너무 빠름" : "") : ""];
+}
+
+/* 예전에 만든 결과 탭에 새 칸 제목(걸린 시간, 2026-11-26)이 없으면 넣고, 오늘 탭도 N열까지 보이게 */
+function headFix_(sh) {
+  if (sh.getRange(1, RES_HEAD.length).getValue() !== "") return;
+  sh.getRange(1, 1, 1, RES_HEAD.length).setValues([RES_HEAD]);
+  var t = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_TODAY);
+  if (t) t.getRange("A1").setFormula(
+    "=IFERROR(QUERY('" + SHEET_RES + "'!A:N,\"select * where A >= date '\"&TEXT(TODAY(),\"yyyy-mm-dd\")&\"' order by A desc\",1),\"오늘 결과가 아직 없어요\")");
 }
 
 /* ---------- 학생별 기록 저장 (상태 시트, 숨김) ---------- */
@@ -357,6 +369,7 @@ function mergeState(a, b) {
       var m = {}, j; for (j in y) m[j] = y[j];
       m.away = Math.max(x.away || 0, y.away || 0); m.awaySec = Math.max(x.awaySec || 0, y.awaySec || 0);
       m.quitAt = Math.max(x.quitAt || 0, y.quitAt || 0); m.qDone = Math.max(x.qDone || 0, y.qDone || 0);
+      var t0 = Math.min(x.t0 || y.t0 || 0, y.t0 || x.t0 || 0); if (t0) m.t0 = t0;
       lock[k] = m;
     }
   }
