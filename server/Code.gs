@@ -13,6 +13,9 @@
  *  - 알림장 : 학생이 앱에서 쓴 알림장이 날짜별로 한 줄씩 쌓임(자동, 고치지 마세요)
  *      상태 = 작성 중 / 확정 / 자동 잠금. 확정하거나 날짜가 지나면(밤 12시) 서버가 수정을 거부함
  *  - 상태 : 학생별 기록 저장용(숨김, 고치지 마세요)
+ *  - 모의고사 : 주간 모의고사 정답(한 시험 한 줄). 앱 '모의고사 OMR → 선생님: 정답 등록'에서 넣거나 여기에 직접 써도 됨
+ *      정답 칸은 35241 53214 … 처럼 1~5 숫자만(띄어쓰기 자유), 3점 문항 칸은 21, 29, 31 …
+ *  - 모의고사 답안 : 학생이 앱 OMR로 낸 답안(한 학생·한 시험 한 줄). 줄을 지우면 그 학생이 다시 낼 수 있음
  */
 
 var SHEET_STU = "학생", SHEET_RES = "결과", SHEET_TODAY = "오늘", SHEET_STATE = "상태";
@@ -32,6 +35,13 @@ var DIARY_MAX = 300;        // 칸 하나에 쓸 수 있는 글자 수
 var DIARY_SCAN = 6000;      // 시트 맨 아래에서 몇 줄까지 찾아볼지
 var DIARY_SHOW = 30;        // 앱에 돌려주는 최근 알림장 개수
 var TZ = "Asia/Seoul";
+
+/* 주간 모의고사 OMR (2026-11-25) */
+var SHEET_MOCK = "모의고사", SHEET_MANS = "모의고사 답안";
+var MOCK_HEAD = ["시험 날짜", "시험 이름", "대상(비우면 전체)", "정답", "3점 문항", "듣기 문항 수", "메모", "등록 시각"];
+var MANS_HEAD = ["제출 시각", "아이디", "이름", "시험 날짜", "시험 이름", "점수", "맞은 수", "듣기", "독해", "틀린 번호", "학생 답안"];
+var MOCK_OPEN_DAYS = 14;    // 시험 날짜부터 며칠 동안 학생 화면에 보일지
+var MOCK_KEEP_DAYS = 60;    // 이미 낸 시험 결과를 학생 화면에 며칠 동안 보여 줄지
 var ST_DRAFT = "작성 중", ST_DONE = "확정", ST_AUTO = "자동 잠금";
 
 /* ---------- 처음 한 번 실행 ---------- */
@@ -77,6 +87,20 @@ function 처음설정() {
     se = ss.insertSheet(SHEET_SET);
     se.getRange("B:B").setNumberFormat("@");
     se.appendRow(["선생님 확인 비밀번호 (숫자 4자리를 오른쪽 칸에 적어 주세요)", ""]);
+  }
+  var mk = ss.getSheetByName(SHEET_MOCK);
+  if (!mk) {
+    mk = ss.insertSheet(SHEET_MOCK);
+    mk.getRange("A:H").setNumberFormat("@");   // 정답(35241…)이 큰 숫자로 바뀌지 않게 전부 글자로
+    mk.appendRow(MOCK_HEAD);
+    mk.setFrozenRows(1);
+  }
+  var ma = ss.getSheetByName(SHEET_MANS);
+  if (!ma) {
+    ma = ss.insertSheet(SHEET_MANS);
+    ma.getRange("A:K").setNumberFormat("@");
+    ma.appendRow(MANS_HEAD);
+    ma.setFrozenRows(1);
   }
   secret_();
 }
@@ -137,7 +161,173 @@ function handle_(q) {
     }
   }
   if (q.act === "diary_get" || q.act === "diary_save" || q.act === "diary_confirm" || q.act === "diary_check") return diary_(me, q);
+  if (/^mock_/.test(String(q.act || ""))) return mock_(me, q);
   return { ok: false, code: "act" };
+}
+
+/* ---------- 주간 모의고사 OMR (2026-11-25) ----------
+   선생님: 시험마다 정답·3점 문항·대상을 등록(선생님 확인 비밀번호 = 설정 B1).
+   학생: 앱에서 OMR처럼 답을 칠해 한 번만 제출 → 서버가 채점해 '모의고사 답안'·'결과' 시트에 기록.
+   학생 화면에는 점수·틀린 번호만 보내고 정답은 보내지 않음. 정답을 고치면 이미 낸 학생도 새 정답으로 다시 채점됨. */
+var CIRCLE_ = { "①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5 };
+function mockKey_(v) {                    // 정답 칸 → [3,5,2,…]. 숫자로 바뀐 칸(지수 표기 등)은 못 씀 → null
+  if (typeof v === "number") return null;
+  var s = String(v == null ? "" : v), out = [];
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charAt(i);
+    if (CIRCLE_[c]) out.push(CIRCLE_[c]);
+    else if (c >= "1" && c <= "5") out.push(Number(c));
+  }
+  return out;
+}
+function mockNums_(v) {
+  var out = [];
+  String(v == null ? "" : v).split(/[^0-9]+/).forEach(function (x) { var n = Number(x); if (x && n > 0 && out.indexOf(n) < 0) out.push(n); });
+  return out.sort(function (a, b) { return a - b; });
+}
+function mockExam_(v, row) {
+  var key = mockKey_(v[3]), n = key ? key.length : 0;
+  var ls = String(v[5] == null ? "" : v[5]).trim(), listen = ls === "" ? (n === 45 ? 17 : 0) : Math.max(0, Math.min(n, Number(ls) || 0));
+  var date = dstr_(v[0]), name = String(v[1] == null ? "" : v[1]).trim();
+  return { row: row, mid: date + "|" + name, date: date, name: name, target: String(v[2] == null ? "" : v[2]).trim(),
+    key: key || [], bad: !key, n: n, three: mockNums_(v[4]).filter(function (x) { return x <= n; }), listen: listen, memo: String(v[6] == null ? "" : v[6]) };
+}
+function mockExams_() {
+  var sh = sheet_(SHEET_MOCK), n = sh.getLastRow(), out = [];
+  if (n < 2) return out;
+  var vals = sh.getRange(2, 1, n - 1, MOCK_HEAD.length).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    var e = mockExam_(vals[i], i + 2);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.name) out.push(e);
+  }
+  return out;
+}
+function mockFor_(me, e) {               // 대상 칸: 비우면 전체. "고1, 배명고2"처럼 쓰면 이름(학교+학년)이나 아이디에 그 말이 들어간 학생만
+  var t = e.target.split(/[,，、\/]+/).map(key_).filter(function (x) { return x; });
+  if (!t.length) return true;
+  var nm = key_(me.name), id = key_(me.id);
+  return t.some(function (x) { return nm.indexOf(x) >= 0 || id === x; });
+}
+function mockAns_(s, n) {                // 학생 답안 글자 "35021…"(0 = 안 칠함) → 배열
+  var a = String(s == null ? "" : s).replace(/[^0-5]/g, "").split("").map(Number);
+  while (a.length < n) a.push(0);
+  return a.slice(0, n);
+}
+function mockGrade_(e, ans) {
+  var three = {}, has3 = e.three.length > 0, sc = 0, mx = 0, c = 0, lc = 0, wrong = [];
+  e.three.forEach(function (x) { three[x] = 1; });
+  for (var i = 0; i < e.n; i++) {
+    var p = has3 ? (three[i + 1] ? 3 : 2) : 1, ok = ans[i] === e.key[i];
+    mx += p;
+    if (ok) { sc += p; c++; if (i < e.listen) lc++; } else wrong.push(i + 1);
+  }
+  return { score: has3 ? sc : (e.n ? Math.round(c * 100 / e.n) : 0), max: has3 ? mx : 100, scaled: !has3, correct: c, total: e.n,
+    lc: lc, lt: e.listen, rc: c - lc, rt: e.n - e.listen, wrong: wrong };
+}
+function mockScoreTxt_(g) { return g.scaled ? "환산 " + g.score + "점" : g.max === 100 ? g.score + "점" : g.score + "/" + g.max + "점"; }
+function mockSubs_() {
+  var sh = sheet_(SHEET_MANS), n = sh.getLastRow();
+  if (n < 2) return { sh: sh, vals: [] };
+  return { sh: sh, vals: sh.getRange(2, 1, n - 1, MANS_HEAD.length).getValues() };
+}
+function mockSubKey_(v) { return dstr_(v[3]) + "|" + String(v[4] == null ? "" : v[4]).trim(); }
+function mockPub_(e) { return { mid: e.mid, date: e.date, name: e.name, n: e.n, listen: e.listen }; }
+function mockAdmin_(e, subs) {
+  var cnt = 0, sum = 0;
+  subs.vals.forEach(function (v) { if (mockSubKey_(v) === e.mid) { cnt++; sum += mockGrade_(e, mockAns_(v[10], e.n)).score; } });
+  return { mid: e.mid, date: e.date, name: e.name, target: e.target, key: e.key.join(""), bad: e.bad, n: e.n, three: e.three, listen: e.listen, memo: e.memo,
+    cnt: cnt, avg: cnt ? Math.round(sum / cnt * 10) / 10 : null };
+}
+function mockRegrade_(e, subs) {         // 정답을 고친 뒤 '모의고사 답안' 시트의 점수 칸도 새로 맞춤
+  subs.vals.forEach(function (v, i) {
+    if (mockSubKey_(v) !== e.mid) return;
+    var g = mockGrade_(e, mockAns_(v[10], e.n));
+    subs.sh.getRange(i + 2, 6, 1, 5).setValues([[mockScoreTxt_(g), g.correct + "/" + g.total, g.lt ? g.lc + "/" + g.lt : "", g.lt ? g.rc + "/" + g.rt : "", g.wrong.join(", ")]]);
+  });
+}
+function mock_(me, q) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    var today = todayKst_(), exams = mockExams_(), subs = mockSubs_();
+    if (q.act === "mock_list") {
+      var from = Utilities.formatDate(new Date(Date.now() - MOCK_OPEN_DAYS * 864e5), TZ, "yyyy-MM-dd");
+      var keep = Utilities.formatDate(new Date(Date.now() - MOCK_KEEP_DAYS * 864e5), TZ, "yyyy-MM-dd");
+      var mine = {};
+      subs.vals.forEach(function (v) { if (key_(v[1]) === key_(me.id)) mine[mockSubKey_(v)] = v; });
+      var out = [];
+      exams.forEach(function (e) {
+        if (e.bad || !e.n) return;
+        var v = mine[e.mid], x = mockPub_(e);
+        if (v) {
+          if (e.date < keep) return;
+          var ans = mockAns_(v[10], e.n), g = mockGrade_(e, ans);
+          g.at = tstr_(v[0]); g.ans = ans.join(""); x.done = g;
+          out.push(x);
+        } else if (e.date <= today && e.date >= from && mockFor_(me, e)) out.push(x);
+      });
+      out.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : a.name < b.name ? -1 : 1; });
+      return { ok: true, today: today, exams: out };
+    }
+    if (q.act === "mock_submit") {
+      var ex = null;
+      exams.forEach(function (e) { if (e.mid === String(q.mid || "") && !e.bad && e.n) ex = e; });
+      if (!ex) return { ok: false, code: "noexam" };
+      if (ex.date > today || !mockFor_(me, ex)) return { ok: false, code: "noexam" };
+      for (var i = 0; i < subs.vals.length; i++)
+        if (key_(subs.vals[i][1]) === key_(me.id) && mockSubKey_(subs.vals[i]) === ex.mid) return { ok: false, code: "done" };
+      var raw = Array.isArray(q.ans) ? q.ans : [];
+      var ans = []; for (var j = 0; j < ex.n; j++) { var a = Number(raw[j]) || 0; ans.push(a >= 1 && a <= 5 ? a : 0); }
+      var g = mockGrade_(ex, ans), at = nowKst_();
+      subs.sh.appendRow([at, txt_(me.id), txt_(me.name), ex.date, txt_(ex.name), mockScoreTxt_(g), g.correct + "/" + g.total,
+        g.lt ? g.lc + "/" + g.lt : "", g.lt ? g.rc + "/" + g.rt : "", g.wrong.join(", "), "'" + ans.join("")]);
+      var rs = sheet_(SHEET_RES);
+      rs.appendRow([new Date(), txt_(me.id), txt_(me.name), "모의고사", txt_(ex.name), ex.date, g.scaled ? g.score : Math.round(g.score * 100 / g.max),
+        g.correct + "/" + g.total, "제출", "", g.wrong.length ? "틀린 번호 " + g.wrong.join(", ") : "", "", ""]);
+      g.at = at; g.ans = ans.join("");
+      var x2 = mockPub_(ex); x2.done = g;
+      return { ok: true, exam: x2 };
+    }
+    /* 선생님 */
+    var bad = pinCheck_(me, q.pin);
+    if (bad) return bad;
+    var list = function () { return exams.slice().reverse().slice(0, 40).map(function (e) { return mockAdmin_(e, subs); }); };
+    if (q.act === "mock_admin_list") return { ok: true, today: today, exams: list() };
+    if (q.act === "mock_admin_save" || q.act === "mock_admin_del") {
+      var sh = sheet_(SHEET_MOCK), orig = null;
+      exams.forEach(function (e) { if (e.mid === String(q.orig || "")) orig = e; });
+      var cntOf = function (e) { return subs.vals.filter(function (v) { return mockSubKey_(v) === e.mid; }).length; };
+      if (q.act === "mock_admin_del") {
+        if (!orig) return { ok: false, code: "noexam" };
+        if (cntOf(orig)) return { ok: false, code: "hassubs" };
+        sh.deleteRow(orig.row);
+        exams = mockExams_();
+        return { ok: true, exams: list() };
+      }
+      var date = String(q.date || ""), name = String(q.name || "").replace(/\s+/g, " ").trim().slice(0, 60);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, code: "date" };
+      if (!name) return { ok: false, code: "name" };
+      var key = (Array.isArray(q.key) ? q.key : []).map(Number);
+      if (!key.length || key.length > 100 || key.some(function (k) { return !(k >= 1 && k <= 5); })) return { ok: false, code: "key" };
+      var mid = date + "|" + name;
+      var dup = exams.some(function (e) { return e.mid === mid && (!orig || e.row !== orig.row); });
+      if (dup) return { ok: false, code: "dup" };
+      if (orig && orig.mid !== mid && cntOf(orig)) return { ok: false, code: "rename" };
+      var three = (Array.isArray(q.three) ? q.three : []).map(Number).filter(function (x) { return x >= 1 && x <= key.length; });
+      var ls = Math.max(0, Math.min(key.length, Number(q.listen) || 0));
+      var g5 = function (k) { var s = ""; for (var i = 0; i < k.length; i++) s += (i && i % 5 === 0 ? " " : "") + k[i]; return s; };
+      var row = [date, txt_(name), txt_(String(q.target || "").trim().slice(0, 80)), g5(key), three.join(", "), String(ls), txt_(String(q.memo || "").slice(0, 200)), nowKst_()];
+      var r = orig ? orig.row : sh.getLastRow() + 1;
+      sh.getRange(r, 1, 1, MOCK_HEAD.length).setNumberFormat("@").setValues([row]);
+      var ne = mockExam_(row, r);
+      if (orig) mockRegrade_(ne, subs);
+      exams = mockExams_();
+      return { ok: true, mid: mid, exams: list() };
+    }
+    return { ok: false, code: "act" };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* ---------- 알림장 (2026-10-19) ----------

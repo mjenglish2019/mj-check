@@ -138,6 +138,23 @@ details summary{cursor:pointer}
 html,body{overscroll-behavior-y:none}   /* 시험 중 화면을 아래로 당겨 새로고침되는 일을 막음 (2026-10-20) */
 .dk{min-width:5em;font-weight:700;color:var(--muted);font-size:14px;flex:none}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.omr{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.omr-sec{background:var(--paper);color:var(--muted);font-size:13px;font-weight:700;padding:7px 14px;border-bottom:1px solid var(--line)}
+.omr-row{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)}
+.omr-row.g5{border-bottom-color:color-mix(in srgb,var(--line) 70%,var(--ink) 30%)}
+.omr-row.wr{background:var(--bad-bg)}
+.omr-no{width:2.1em;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);flex:none}
+.omr-bubs{display:flex;gap:6px;flex:1;justify-content:center}
+.omr .bub{width:40px;height:40px;min-height:0;padding:0;border-radius:50%;border:1.5px solid var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:var(--muted);background:transparent;flex:none}
+.omr .bub[aria-pressed="true"],.omr .bub.on{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.omr-row.wr .bub.on{background:var(--bad);border-color:var(--bad)}
+.omr-x{width:2.6em;text-align:center;font-weight:700;color:var(--bad);flex:none}.omr-x.ok{color:var(--ok)}
+.omr .t3{min-height:34px;padding:2px 8px;font-size:12.5px;border-radius:8px;flex:none;color:var(--muted)}
+.omr .t3[aria-pressed="true"]{background:var(--pend-bg);border-color:var(--pend);color:var(--pend);font-weight:700}
+.omr-row.empty .omr-no{color:var(--bad)}
+.omr-foot{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;margin:0 -2px;background:var(--surface);border:1.5px solid var(--ink);border-radius:14px;box-shadow:0 -4px 14px rgba(0,0,0,.08)}
+.omr-foot button{min-width:120px}
+input[type=date],input[type=number]{width:100%;font:inherit;color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:10px;padding:11px 12px}
 </style>
 
 <div class="wrap" id="app"><div class="panel"><p class="muted">교재를 불러오는 중이에요…</p></div></div>
@@ -220,9 +237,9 @@ const MAXRETRY=3;
 function maxR(id){const b=id&&findBook(id);return (b&&b.retry)||MAXRETRY}
 function shufCh(items,bookId){const b=bookId&&findBook(bookId);if(!b||!b.shufChoices)return items;return items.map(x=>{if(!x.choices||x.kind==="fill")return x;const a=x.choices[x.answer],ch=shuffle(x.choices.slice());return Object.assign({},x,{choices:ch,answer:ch.indexOf(a)})})}
 /* 앱 버전 표시·자동 새로고침 (2026-10-15): 홈 화면 맨 아래 작은 글씨. 앱이 켜진 채로 새 버전이 올라오면 홈 화면으로 돌아올 때 새로고침 */
-const BUILD="2026-11-24c";
+const BUILD="2026-11-25a";
 async function checkBuild(){try{const r=await fetch("index.html?b="+Date.now(),{cache:"no-store"});const t=await r.text();const m=t.match(/const BUILD="([^"]+)"/);
-  if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
+  if(m&&m[1]!==BUILD&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="diary"&&S.view!=="omr"&&S.view!=="mockadmin"){toast("새 버전으로 바꿔요");setTimeout(()=>location.reload(),900)}}catch(e){}}
 /* 화면 이탈 기록 (2026-10-13): 시험 중 다른 앱·홈 화면으로 나가면 횟수·시간을 남김. 1초 미만은 무시 */
 let awayAt=0;
 function awayKey(q){return q&&!q.wrongMode&&q.bookId?q.bookId+"/"+q.unitId:""}
@@ -338,11 +355,11 @@ async function sync(){
     S.sync={state:"ok",at:new Date().toISOString()};
   }catch(e){S.sync={state:"fail",at:S.sync.at}}
   finally{syncing=false;
-    if(S.me&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="start"&&S.view!=="admin"&&S.view!=="diary")render();
+    if(S.me&&S.view!=="quiz"&&S.view!=="cards"&&S.view!=="start"&&S.view!=="admin"&&S.view!=="diary"&&S.view!=="omr"&&S.view!=="mockadmin")render();
     if(syncAgain){syncAgain=false;setTimeout(sync,400)}}
 }
 function authFail(){try{localStorage.removeItem("mj_me")}catch(e){}
-  diaryReset();S.me=null;S.quiz=null;S.result=null;S.view="start";S.loginMsg="비밀번호가 바뀌었어요. 다시 들어와 주세요.";render()}
+  diaryReset();mockReset();S.me=null;S.quiz=null;S.result=null;S.view="start";S.loginMsg="비밀번호가 바뀌었어요. 다시 들어와 주세요.";render()}
 /* 예전에 이름만 쓰던 기록(띄어쓰기만 다른 이름 포함)을 로그인 이름으로 옮김 */
 function migrateName(to){
   const from=knownNames().find(n=>n!==to&&nameKey(n)===nameKey(to));if(!from)return;
@@ -363,7 +380,7 @@ async function doLogin(){
     lsSet("mj_ids",[res.id].concat(lsGet("mj_ids",[]).filter(x=>x!==res.id)).slice(0,8));
     applyState(mergeState(collectState(),res.state));
     S.sel=lsGet(stuKey("sel"),{});S.tab="vocab";S.view="home";S.loginMsg="";
-    diaryReset();sync();diaryLoad();
+    diaryReset();mockReset();sync();diaryLoad();mockLoad(true);
   }catch(e){S.loginMsg="인터넷 연결을 확인해 주세요."}
   finally{S.loginBusy=false;render();window.scrollTo(0,0)}
 }
@@ -388,7 +405,7 @@ function syncNote(){const n=outbox().length,st=S.sync||{};
   :`<div class="note" style="background:var(--ok-bg);color:var(--ok)"><b>✓ 시험 결과는 끝날 때마다 원장님께 자동으로 기록돼요.</b>${st.at?`<br>마지막 저장 ${hm(st.at)}`:""}</div>`}
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden)return;
-  if(S.view!=="quiz"){loadResets().then(()=>{sync();if(S.view!=="quiz"&&S.view!=="cards")render()});diaryLoad();checkBuild()}});
+  if(S.view!=="quiz"){loadResets().then(()=>{sync();if(S.view!=="quiz"&&S.view!=="cards"&&S.view!=="omr"&&S.view!=="mockadmin")render()});diaryLoad();if(S.view!=="omr"&&S.view!=="mockadmin")mockLoad();checkBuild()}});
 window.addEventListener("online",()=>{sync();diaryLoad()});
 setInterval(()=>{if(useApi()&&S.me&&outbox().length&&!syncing)sync()},60000);
 setInterval(()=>{if(useApi()&&S.me&&S.diary.today&&ymd()>S.diary.today)diaryLoad()},60000);
@@ -477,6 +494,155 @@ function hwPanel(){const D=S.diary;if(!DIARY_ON||!D.today)return "";const e=D.en
   const no=ckLabels(e.nk);
   return no.length?`<div class="note" style="background:var(--bad-bg);color:var(--bad)"><b>✗ 미완료 숙제 ${no.length}개: ${no.join(", ")}</b> · 부모님 문자에 들어가요.</div>`
     :`<div class="note" style="background:var(--ok-bg);color:var(--ok)"><b>✓ 오늘 숙제 모두 완료.</b></div>`}
+/* ---------- 주간 모의고사 OMR (2026-11-25) ----------
+   선생님이 시험마다 정답·3점 문항·대상을 등록(선생님 확인 비밀번호) → 학생은 종이 시험을 본 뒤 앱에서 OMR처럼 답을 칠해 한 번만 제출.
+   채점은 서버가 하고(정답은 학생 기기에 오지 않음), 점수·듣기/독해·틀린 번호가 '결과'·'모의고사 답안' 시트와 부모님 카톡 문구에 들어간다. */
+const MOCK_ON=true;
+function mockReset(){S.mock={list:null,today:null,err:"",busy:false,loading:false,sel:null,confirm:false};
+  S.mockT={pin:"",pinAt:0,pinMsg:"",list:null,form:null,busy:false,err:"",paste:"",delArm:false}}
+mockReset();
+function mockOk(){return MOCK_ON&&useApi()&&S.me&&S.me.token}
+function mockCache(){return S.me?lsGet(stuKey("mockdone"),{}):{}}
+function mockFind(mid){return (S.mock.list||[]).find(x=>x.mid===mid)}
+function mockDraft(mid,n){const a=lsGet(stuKey("mockans_"+mid),[]);const out=[];for(let i=0;i<n;i++)out.push(Number(a[i])||0);return out}
+function mockScore(g){return g.scaled?`환산 ${g.score}점`:g.max===100?`${g.score}점`:`${g.score}/${g.max}점`}
+function mockDate(s){const p=String(s||"").split("-").map(Number);return p.length===3?`${p[1]}/${p[2]}`:s}
+async function mockLoad(force){
+  const me=S.me,M=S.mock;if(!mockOk()||M.loading)return;
+  if(!force&&M.at&&Date.now()-M.at<20000)return;
+  M.loading=true;
+  try{
+    const res=await api({act:"mock_list",id:me.id,token:me.token});
+    if(S.me!==me)return;
+    if(!res||!res.ok){if(res&&res.code==="auth"){authFail();return}M.err=res&&res.code==="act"?"old":"fail";return}
+    M.err="";M.today=res.today;M.list=res.exams||[];M.at=Date.now();
+    const c={};M.list.forEach(x=>{if(x.done)c[x.mid]={mid:x.mid,name:x.name,date:x.date,n:x.n,done:x.done}});lsSet(stuKey("mockdone"),c);
+  }catch(e){M.err=M.err||"net"}
+  finally{M.loading=false;if(["home","mock","omr","today"].includes(S.view)&&!S.mock.busy)render()}
+}
+function mockErrTxt(c){return c==="old"?"서버가 아직 예전 버전이에요. 원장님께 Apps Script 새 버전 배포를 부탁드려요.":c==="net"?"인터넷 연결을 확인해 주세요.":"모의고사 목록을 불러오지 못했어요. 잠시 뒤 다시 들어와 주세요."}
+/* 부모님 문자·오늘 본 시험에 들어갈 모의고사: 제출 시각(한국 시간 yyyy-MM-dd HH:mm)으로 날짜를 고름 */
+function mockDoneOn(dayStrs){const c=mockCache();return Object.values(c).filter(x=>x&&x.done&&dayStrs.includes(String(x.done.at||"").slice(0,10))).sort((a,b)=>a.done.at<b.done.at?-1:1)}
+function mockLines(x){const g=x.done,L=[`■ 주간 모의고사 · ${mockDate(x.date)} ${x.name}`];
+  L.push(`  ${mockScore(g)} (${g.correct}/${g.total}문항)${g.lt?` · 듣기 ${g.lc}/${g.lt} · 독해 ${g.rc}/${g.rt}`:""}`);
+  L.push(g.wrong.length?`  틀린 번호: ${g.wrong.join(", ")}`:"  모두 맞았어요!");return L}
+function mockHomeBtn(){if(!mockOk()||S.mock.err==="old")return "";   /* 서버를 새 버전으로 배포하기 전에는 버튼을 숨김 */const L=S.mock.list;
+  const todo=L?L.filter(x=>!x.done).length:0;
+  const b=!L?`<span class="badge none">${S.mock.err?"!":"…"}</span>`:todo?`<span class="badge bad">제출 전 ${todo}</span>`:L.length?`<span class="badge ok">제출 완료</span>`:`<span class="badge none">시험 없음</span>`;
+  return `<button class="todaybtn" data-act="mock"><span>주간 모의고사 OMR</span>${b}</button>`}
+function vMock(){
+  const M=S.mock,L=M.list;
+  let body;
+  if(!L)body=`<div class="panel"><div class="empty">${M.err?esc(mockErrTxt(M.err)):"불러오는 중이에요…"}</div></div>`;
+  else if(!L.length)body=`<div class="panel"><div class="empty">지금 낼 모의고사가 없어요.<br>시험을 본 날 선생님이 정답을 올리면 여기에 나와요.</div></div>`;
+  else body=`<div class="units">${L.map(x=>{const g=x.done,dr=!g&&mockDraft(x.mid,x.n).filter(Boolean).length;
+    return `<button class="unit" data-act="omr" data-v="${esc(x.mid)}"><div class="grow"><div class="name">${esc(x.name)}</div>
+      <div class="muted small tnum">${mockDate(x.date)} · ${x.n}문항${g?` · ${esc(String(g.at).slice(5).replace("-","/"))} 제출`:dr?` · ${dr}개 칠함`:""}</div></div>
+      ${g?`<span class="badge ok">${esc(mockScore(g))}</span>`:`<span class="badge bad">제출 전</span>`}</button>`}).join("")}</div>`;
+  return header()+`<button class="ghost" data-act="home" style="align-self:flex-start">← 목록으로</button>
+  <div class="stack"><h1>주간 <span class="mark">모의고사</span> OMR</h1><p class="muted small">종이 시험을 다 본 뒤, 시험지에 표시한 답을 그대로 칠해서 제출해요. <b style="color:var(--ink)">제출은 한 번만</b> 할 수 있어요.</p></div>
+  ${body}
+  <button class="ghost" data-act="mockadmin" style="align-self:center;margin-top:18px">선생님: 정답 등록</button>`;
+}
+function omrRows(n,listen,ansArr,opt){opt=opt||{};let h="";
+  for(let i=0;i<n;i++){
+    if(listen&&(i===0||i===listen))h+=`<div class="omr-sec">${i===0?`듣기 1~${listen}번`:`독해 ${listen+1}~${n}번`}</div>`;
+    const a=ansArr[i]||0,wr=opt.wrong&&opt.wrong.has(i+1),t3=opt.three&&opt.three.has(i+1);
+    h+=`<div class="omr-row${(i+1)%5===0?" g5":""}${wr?" wr":""}${!a&&opt.edit?" empty":""}"><span class="omr-no">${i+1}</span><span class="omr-bubs">${[1,2,3,4,5].map(k=>
+      opt.edit?`<button class="bub" data-act="${opt.act}" data-q="${i}" data-v="${k}" aria-pressed="${a===k}" aria-label="${i+1}번 ${k}">${k}</button>`
+      :`<span class="bub${a===k?" on":""}">${k}</span>`).join("")}</span>${opt.act==="tbub"?`<button class="t3" data-act="t3" data-q="${i}" aria-pressed="${!!t3}">3점</button>`:wr?`<span class="omr-x">✗</span>`:opt.wrong?`<span class="omr-x ok">○</span>`:""}</div>`}
+  return `<div class="omr">${h}</div>`}
+function vOmr(){
+  const M=S.mock,x=mockFind(M.sel);if(!x)return vMock();
+  const back=`<button class="ghost" data-act="mock" style="align-self:flex-start">← 모의고사 목록</button>`;
+  const head=`<div class="stack"><p class="muted small">${mockDate(x.date)} · ${x.n}문항${x.listen?` (듣기 ${x.listen} · 독해 ${x.n-x.listen})`:""}</p><h1>${esc(x.name)}</h1></div>`;
+  if(x.done){const g=x.done,ans=String(g.ans||"").split("").map(Number);
+    return header()+back+head+`<div class="panel today-head"><p class="muted small">${esc(S.me.name)} · ${esc(g.at)} 제출</p>
+      <div class="today-name tnum">${esc(mockScore(g))}</div><p class="small tnum"><b>${g.correct}/${g.total}문항</b>${g.lt?` · 듣기 ${g.lc}/${g.lt} · 독해 ${g.rc}/${g.rt}`:""}</p>
+      ${g.wrong.length?`<p class="small" style="color:var(--bad)"><b>틀린 번호</b> ${g.wrong.join(", ")}</p>`:`<p class="small ok-t"><b>모두 맞았어요!</b></p>`}</div>
+      <button class="primary wide" data-act="sharetoday">부모님께 카톡으로 보내기</button>
+      <p class="muted small" style="margin-top:-8px">오늘 본 다른 시험 결과와 함께 보내져요. 정답과 풀이는 수업 시간에 확인해요.</p>
+      <h2>내가 낸 답안</h2>${omrRows(x.n,x.listen,ans,{wrong:new Set(g.wrong)})}`}
+  const ans=mockDraft(x.mid,x.n),done=ans.filter(Boolean).length,miss=[];ans.forEach((a,i)=>{if(!a)miss.push(i+1)});
+  const conf=M.confirm?`<div class="panel" style="border-color:var(--accent)"><h2>제출할까요?</h2>
+      ${miss.length?`<p class="small" style="color:var(--bad)"><b>안 칠한 번호 ${miss.length}개: ${miss.slice(0,20).join(", ")}${miss.length>20?" …":""}</b><br>안 칠한 번호는 틀린 것으로 채점돼요.</p>`:`<p class="small">${x.n}문항을 모두 칠했어요.</p>`}
+      <p class="small"><b>제출하면 다시 고칠 수 없어요.</b> 시험지에 표시한 답과 같은지 한 번 더 확인해요.</p>
+      <div class="row"><button class="primary grow" data-act="mocksend" ${M.busy?"disabled":""}>${M.busy?"채점하는 중…":"제출하기"}</button><button class="grow" data-act="mockcancel" ${M.busy?"disabled":""}>다시 확인</button></div></div>`:"";
+  return header()+back+head+`<div class="note">번호를 눌러 칠하고, 잘못 칠했으면 <b style="color:var(--ink)">다른 번호를 누르거나 같은 번호를 한 번 더</b> 누르면 지워져요. 칠한 답은 이 휴대폰에 저장돼요.</div>`+
+    omrRows(x.n,x.listen,ans,{edit:true,act:"mbub"})+conf+
+    `<div class="omr-foot"><span class="tnum"><b>${done}</b>/${x.n} 칠함</span><button class="primary" data-act="mockask" ${M.busy?"disabled":""}>제출하기</button></div>`;
+}
+async function mockSubmit(){
+  const M=S.mock,x=mockFind(M.sel),me=S.me;if(!x||M.busy)return;
+  M.busy=true;render();
+  try{
+    const res=await api({act:"mock_submit",id:me.id,token:me.token,mid:x.mid,ans:mockDraft(x.mid,x.n)});
+    if(S.me!==me)return;
+    if(!res||!res.ok){
+      if(res&&res.code==="auth"){authFail();return}
+      if(res&&res.code==="done"){toast("이미 제출한 시험이에요");M.confirm=false;M.busy=false;mockLoad(true);return}
+      toast(res&&res.code==="noexam"?"이 시험은 지금 낼 수 없어요. 선생님께 말씀드려 주세요":res&&res.code==="act"?mockErrTxt("old"):"제출하지 못했어요. 다시 눌러 주세요");return}
+    const L=M.list||[],i=L.findIndex(y=>y.mid===x.mid);if(i>=0)L[i]=res.exam;
+    const c=mockCache();c[x.mid]={mid:x.mid,name:x.name,date:x.date,n:x.n,done:res.exam.done};lsSet(stuKey("mockdone"),c);
+    try{localStorage.removeItem(stuKey("mockans_"+x.mid))}catch(e){}
+    M.confirm=false;toast("제출했어요");window.scrollTo(0,0);
+  }catch(e){toast("인터넷 연결을 확인하고 다시 눌러 주세요")}
+  finally{M.busy=false;if(S.view==="omr")render()}
+}
+/* 선생님: 정답 등록 (선생님 확인 비밀번호 = 시트 '설정' B1, 10분 유지) */
+function mtOn(){const T=S.mockT;return !!T.pin&&Date.now()-T.pinAt<600000}
+const MT_ERR={badpin:"비밀번호가 맞지 않아요.",pinlocked:"여러 번 틀렸어요. 10분 뒤에 다시 해 주세요.",nopin:"선생님 확인 비밀번호가 아직 없어요. 시트 '설정' 탭 B1에 적어 주세요.",
+  date:"시험 날짜를 골라 주세요.",name:"시험 이름을 써 주세요.",key:"정답을 모두 칠해 주세요.",dup:"같은 날짜·이름의 시험이 이미 있어요. 이름을 조금 바꿔 주세요.",
+  rename:"이미 제출한 학생이 있어서 날짜·이름은 바꿀 수 없어요. (정답·3점 문항·대상은 고칠 수 있어요)",hassubs:"이미 제출한 학생이 있어서 지울 수 없어요.",noexam:"시험을 찾지 못했어요. 목록을 새로 불러와 주세요.",act:"서버가 아직 예전 버전이에요. Apps Script에 새 코드를 붙여 넣고 새 버전으로 배포해 주세요."};
+async function mtCall(body){const T=S.mockT,me=S.me;T.busy=true;T.err="";render();
+  try{const res=await api(Object.assign({id:me.id,token:me.token,pin:T.pin},body));if(S.me!==me)return null;
+    if(!res||!res.ok){const c=res&&res.code;if(c==="auth"){authFail();return null}
+      if(c==="badpin"||c==="nopin"||c==="pinlocked"){T.pin="";T.list=null;T.pinMsg=MT_ERR[c]}else T.err=MT_ERR[c]||"저장하지 못했어요. 다시 눌러 주세요.";return null}
+    if(res.exams)T.list=res.exams;return res}
+  catch(e){T.err="인터넷 연결을 확인해 주세요.";return null}
+  finally{T.busy=false;if(S.view==="mockadmin")render()}}
+function mtPinOk(){const T=S.mockT,v=((document.getElementById("mtpin")||{}).value||"").trim();if(!v){toast("비밀번호를 써 주세요");return}
+  T.pin=v;T.pinAt=Date.now();T.pinMsg="";mtCall({act:"mock_admin_list"})}
+function mtNew(){const n=45;S.mockT.form={orig:"",date:ymd(),name:"",target:"",n,listen:17,key:Array(n).fill(0),three:[],memo:""};S.mockT.paste="";S.mockT.delArm=false}
+function mtEdit(e){S.mockT.form={orig:e.mid,date:e.date,name:e.name,target:e.target,n:e.n,listen:e.listen,key:String(e.key).split("").map(Number),three:e.three.slice(),memo:e.memo||"",cnt:e.cnt};S.mockT.paste="";S.mockT.delArm=false}
+function mtResize(f,n){n=Math.max(1,Math.min(100,Number(n)||0));const k=f.key.slice(0,n);while(k.length<n)k.push(0);f.key=k;f.n=n;f.three=f.three.filter(x=>x<=n);f.listen=Math.min(f.listen,n)}
+function vMockAdmin(){
+  const T=S.mockT,back=`<button class="ghost" data-act="mock" style="align-self:flex-start">← 모의고사 목록</button>`;
+  const title=`<div class="stack"><h1>모의고사 <span class="mark">정답 등록</span></h1><p class="muted small">선생님 화면이에요. 학생 휴대폰에서 썼다면 끝난 뒤 '모의고사 목록'으로 돌아가 주세요.</p></div>`;
+  if(!mtOn())return header()+back+title+`<div class="panel"><label class="lbl" for="mtpin">선생님 확인 비밀번호</label>
+    <input type="password" id="mtpin" inputmode="numeric" autocomplete="off" maxlength="12">
+    ${T.pinMsg?`<p class="small" style="color:var(--bad)"><b>${esc(T.pinMsg)}</b></p>`:""}
+    <button class="primary wide" data-act="mtpinok" ${T.busy?"disabled":""}>${T.busy?"확인하는 중…":"확인"}</button><p class="muted small">10분 동안 유지돼요.</p></div>`;
+  const err=T.err?`<div class="note" style="background:var(--bad-bg);color:var(--bad)"><b>${esc(T.err)}</b></div>`:"";
+  const f=T.form;
+  if(f){const k=f.key,done=k.filter(Boolean).length,three=new Set(f.three),pts=k.length*2+f.three.length;
+    return header()+`<button class="ghost" data-act="mtback" style="align-self:flex-start">← 등록한 시험 목록</button>
+    <div class="stack"><h1>${f.orig?"정답 고치기":"새 시험 정답 등록"}</h1>${f.orig&&f.cnt?`<p class="small" style="color:var(--pend)"><b>이미 ${f.cnt}명이 냈어요.</b> 정답을 고치면 그 학생들도 새 정답으로 다시 채점돼요.</p>`:""}</div>
+    <div class="panel">
+      <label class="lbl" for="mf_date">시험 본 날짜</label><input type="date" id="mf_date" data-mf="date" value="${esc(f.date)}">
+      <label class="lbl" for="mf_name">시험 이름</label><input type="text" id="mf_name" data-mf="name" maxlength="60" placeholder="예: 고1 2024년 9월 학평" value="${esc(f.name)}">
+      <label class="lbl" for="mf_target">대상 (비우면 전체 학생)</label><input type="text" id="mf_target" data-mf="target" maxlength="80" placeholder="예: 고1, 배명고2" value="${esc(f.target)}">
+      <p class="muted small" style="margin-top:-6px">쉼표로 여러 개. 학생 이름(학교+학년)에 그 말이 들어간 학생만 보여요. 예: '고1'이면 가락고1·잠실여고1…</p>
+      <div class="row"><div class="grow"><label class="lbl" for="mf_n">문항 수</label><input type="number" id="mf_n" data-mf="n" min="1" max="100" inputmode="numeric" value="${f.n}"></div>
+        <div class="grow"><label class="lbl" for="mf_listen">듣기 문항 수</label><input type="number" id="mf_listen" data-mf="listen" min="0" max="${f.n}" inputmode="numeric" value="${f.listen}"></div></div>
+      <label class="lbl" for="mf_paste">정답 한 번에 넣기 (선택)</label>
+      <textarea id="mf_paste" rows="2" placeholder="예: 35241 53214 … 또는 ③⑤②④①" style="min-height:0">${esc(T.paste)}</textarea>
+      <button data-act="mtpaste">위 정답을 OMR에 채우기</button>
+    </div>
+    ${err}<div class="note">정답 번호를 칠하고, <b style="color:var(--ink)">3점 문항은 오른쪽 '3점'</b>을 눌러요. 3점 문항을 하나도 안 고르면 맞은 개수로 100점 환산해요.</div>
+    ${omrRows(f.n,f.listen,k,{edit:true,act:"tbub",three})}
+    <div class="panel"><label class="lbl" for="mf_memo">메모 (선택, 학생에게 안 보여요)</label><input type="text" id="mf_memo" data-mf="memo" maxlength="200" value="${esc(f.memo)}">
+      ${f.orig&&!f.cnt?`<button class="danger" data-act="mtdel">${T.delArm?"한 번 더 누르면 지워져요":"이 시험 지우기"}</button>`:""}</div>
+    <div class="omr-foot"><span class="tnum small"><b>${done}</b>/${f.n} · 3점 ${f.three.length}개${f.three.length?` · 만점 ${pts}`:""}</span><button class="primary" data-act="mtsave" ${T.busy?"disabled":""}>${T.busy?"저장 중…":"저장"}</button></div>`}
+  const L=T.list;
+  return header()+back+title+err+`<button class="primary wide" data-act="mtnew">＋ 새 시험 정답 등록</button>
+  ${!L?`<div class="panel"><div class="empty">불러오는 중이에요…</div></div>`:!L.length?`<div class="panel"><div class="empty">아직 등록한 시험이 없어요.</div></div>`
+  :`<div class="units">${L.map(e=>`<button class="unit" data-act="mtedit" data-v="${esc(e.mid)}"><div class="grow"><div class="name">${esc(e.name)}</div>
+    <div class="muted small tnum">${esc(e.date)} · ${e.n}문항${e.three.length?` · 3점 ${e.three.length}개`:""} · ${e.target?"대상 "+esc(e.target):"전체"}</div>
+    ${e.bad?`<div class="small" style="color:var(--bad)"><b>정답 칸이 숫자로 바뀌어 못 읽어요. 눌러서 다시 칠해 주세요.</b></div>`:""}</div>
+    <span class="badge ${e.cnt?"ok":"none"}">${e.cnt?`${e.cnt}명 · 평균 ${e.avg}`:"제출 0"}</span></button>`).join("")}</div>`}
+  <p class="muted small">학생별 답안은 구글 시트 <b>모의고사 답안</b> 탭, 점수는 <b>결과</b> 탭에도 쌓여요. 학생이 다시 내야 하면 모의고사 답안 탭에서 그 줄을 지우면 돼요.</p>`;
+}
 /* 앱 설치 (2026-10-13 앱 버전): 안드로이드 크롬은 설치 창을 바로 띄우고, 나머지는 순서 안내 */
 let installEvt=null;
 function isApp(){try{return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}catch(e){return false}}
@@ -545,13 +711,15 @@ function unitBadge(key,t){
 function todayText(){
   const gs=todayGroups(),d=new Date();
   const lines=[`[엠제이영어학원] ${S.me.name} 학생 오늘 점검 결과 (${d.getMonth()+1}/${d.getDate()})`,""];
-  if(!gs.length)lines.push("오늘 본 시험이 없어요.");
+  const mk=mockDoneOn([ymd(d)]);
+  if(!gs.length&&!mk.length)lines.push("오늘 본 시험이 없어요.");
+  mk.forEach(x=>mockLines(x).forEach(l=>lines.push(l)));
   gs.forEach(x=>{const st=x.passed?"통과":x.final?"조교 선생님과 다시 확인":"재시험 중";
     lines.push(`■ ${TYPES[x.type]||x.type} · ${x.bookName}${x.unitName?" "+x.unitName:""}`);
     lines.push(`  ${x.tries.map(t=>t.pct).join(" → ")}점 (${x.tries.length}회) · ${st}${x.away?" · "+awayTxt(x.away,x.awaySec):""}`);
     if(!x.passed&&x.last.wrong&&x.last.wrong.length)lines.push("  다시 외울 단어: "+x.last.wrong.join(", "))});
   hwLines().forEach(l=>lines.push(l));
-  lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험으로 다시 확인합니다.");
+  if(gs.length)lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험으로 다시 확인합니다.");
   return lines.join("\n");
 }
 /* 최근 7일 기록 (2026-10-14): 이 기기에 남은 날짜별 기록 + 서버에서 받은 단원별 기록(hist)으로 채움 */
@@ -577,8 +745,10 @@ function weekText(){
   const p=all.filter(x=>x.passed).length,f=all.filter(x=>!x.passed&&x.final).length,r=all.length-p-f;
   const aw=all.reduce((a,x)=>a+(x.away||0),0),awS=all.reduce((a,x)=>a+(x.awaySec||0),0);
   const lines=[`[엠제이영어학원] ${S.me.name} 학생 최근 7일 점검 결과 (${md(days[0].d)}~${md(days[6].d)})`,""];
-  if(!all.length)lines.push("최근 7일 동안 본 시험이 없어요.");
-  else{lines.push(`공부한 날 ${studied.length}일 / 7일 · ${all.length}단원 (통과 ${p}${f?` · 조교 확인 ${f}`:""}${r?` · 아직 통과 전 ${r}`:""})`);
+  const mk=mockDoneOn(days.map(x=>ymd(x.d)));
+  if(mk.length){mk.forEach(x=>mockLines(x).forEach(l=>lines.push(l)));if(all.length)lines.push("")}
+  if(!all.length&&!mk.length)lines.push("최근 7일 동안 본 시험이 없어요.");
+  else if(all.length){lines.push(`공부한 날 ${studied.length}일 / 7일 · ${all.length}단원 (통과 ${p}${f?` · 조교 확인 ${f}`:""}${r?` · 아직 통과 전 ${r}`:""})`);
     if(aw)lines.push(`시험 중 ${awayTxt(aw,awS)}`);
     studied.forEach(day=>{lines.push("",`▶ ${md(day.d)} (${WD[day.d.getDay()]})`);
       day.gs.forEach(x=>{const st=x.passed?"통과":x.final?"조교 선생님과 다시 확인":dayKey(day.d)===today?"재시험 중":"재시험 미완료";
@@ -586,7 +756,7 @@ function weekText(){
         if(x.h)lines.push(`  첫 시험 ${x.h.pct}점${x.h.pass&&x.h.retryPassed?` → 재시험 ${x.h.retryPassed}회 만에`:""} · ${st}`);
         else lines.push(`  ${x.tries.map(t=>t.pct).join(" → ")}점 (${x.tries.length}회) · ${st}${x.away?" · "+awayTxt(x.away,x.awaySec):""}`)})})}
   hwLines(7).forEach(l=>lines.push(l));
-  lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험으로 다시 확인합니다.");
+  if(all.length)lines.push("","통과 기준은 100점이며, 틀린 문제는 재시험으로 다시 확인합니다.");
   return lines.join("\n");
 }
 async function shareText(t){S.shareText=t;S.shareBox=false;
@@ -617,7 +787,7 @@ function sinceLast(gs){if(!gs.length)return "";const end=gs.reduce((m,x)=>x.end>
   const late=min>=LATE_MIN;return `<p class="small" id="since" style="margin-top:6px;font-weight:700;color:${late?"var(--bad)":"var(--ok)"}">마지막 시험 ${hm(end)}에 끝 · 끝난 지 ${min<60?min+"분":Math.floor(min/60)+"시간 "+(min%60)+"분"}${late?" ⚠ 바로 제출하지 않았어요":""}</p>`}
 setInterval(()=>{if(S.view==="today")render()},30000);
 function vToday(){
-  const gs=todayGroups(),d=new Date();
+  const gs=todayGroups(),d=new Date(),mk=mockDoneOn([ymd(d)]);
   const passN=gs.filter(x=>x.passed).length;
   return header()+`<button class="ghost" data-act="home" style="align-self:flex-start">← 목록으로</button>
   <div class="panel today-head">
@@ -633,13 +803,16 @@ function vToday(){
       ${!x.last.pass&&x.final&&x.last.wrong&&x.last.wrong.length?`<div class="small" style="color:var(--bad)">남은 오답: ${esc(x.last.wrong.join(", "))}</div>`:""}
       ${rk?`<div class="small" style="color:var(--pend)"><b>눌러서 틀린 문제·해설 보기 ›</b></div>`:""}</div>
       <span class="badge ${x.passed?"ok":x.final?"pend":"bad"}">${x.passed?"통과":x.final?"조교 확인":"재시험 중"}</span></${rk?"button":"div"}>`}).join("")}</div>`
-  :`<div class="panel"><div class="empty">오늘 본 시험이 아직 없어요.</div></div>`}
+  :mk.length?"":`<div class="panel"><div class="empty">오늘 본 시험이 아직 없어요.</div></div>`}
+  ${mk.length?`<div class="units">${mk.map(x=>`<button data-act="omr" data-v="${esc(x.mid)}" class="unit trow"><div class="grow"><div class="name">주간 모의고사 · ${esc(x.name)}</div>
+      <div class="muted small tnum">${esc(mockScore(x.done))} · ${x.done.correct}/${x.done.total}문항${x.done.lt?` · 듣기 ${x.done.lc}/${x.done.lt} · 독해 ${x.done.rc}/${x.done.rt}`:""} · ${esc(String(x.done.at).slice(11))} 제출</div>
+      ${x.done.wrong.length?`<div class="small" style="color:var(--bad)">틀린 번호: ${x.done.wrong.join(", ")}</div>`:""}</div><span class="badge ok">제출</span></button>`).join("")}</div>`:""}
   ${useApi()?hwPanel():""}
   ${useApi()?syncNote():(gs.length?`<a class="linkbtn" href="${esc(submitUrl())}" target="_blank" rel="noopener" data-act="sent">원장님께 제출하기</a>
   ${(()=>{const t=lsGet(stuKey("sent_"+dayKey()),null);return t?`<p class="small ok-t" style="margin-top:-8px"><b>✓ 오늘 ${esc(t)}에 제출했어요.</b> 공부를 더 했으면 한 번 더 눌러요.</p>`
     :`<p class="muted small" style="margin-top:-8px">누르면 바로 원장님께 가요. 새 창에 "응답이 기록되었습니다"가 뜨면 끝이에요. 오늘 공부를 다 끝낸 뒤 눌러요.</p>`})()}`
   :`<span class="linkbtn off" aria-disabled="true">원장님께 제출하기</span>`)}
-  <button class="wide" data-act="sharetoday" ${gs.length||hwNo(diaryToday()).length?"":"disabled"}>부모님께 카톡으로 보내기</button>
+  <button class="wide" data-act="sharetoday" ${gs.length||mk.length||hwNo(diaryToday()).length?"":"disabled"}>부모님께 카톡으로 보내기</button>
   <button class="wide" data-act="shareweek">최근 7일 기록 부모님께 보내기</button>
   <p class="muted small" style="margin-top:-8px">집에서 하루씩 공부하는 학생은 일주일에 한 번 이 버튼으로 모아서 보내도 돼요.</p>
   ${S.shareBox?`<div class="panel"><p class="muted small">아래 글을 길게 눌러 복사한 뒤 카톡에 붙여 넣으세요.</p><div class="copybox" id="tb">${esc(S.shareText||todayText())}</div></div>`:""}
@@ -679,7 +852,7 @@ function vHome(){
   }
   const tn=todayGroups().length;
   return header()+`<button class="todaybtn" data-act="today"><span>오늘 본 시험</span><span class="badge ${tn?"ok":"none"}">${tn}개 단원</span></button>
-  ${useApi()?`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 공부가 다 끝나면 부모님께 카톡을 보냅니다.</b><br>오늘 본 시험 → 부모님께 카톡으로 보내기</p>`:`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}${useApi()?diaryCard():""}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button><p class="small muted" style="text-align:center;margin-top:18px">앱 버전 ${BUILD}</p>`;
+  ${useApi()?`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 공부가 다 끝나면 부모님께 카톡을 보냅니다.</b><br>오늘 본 시험 → 부모님께 카톡으로 보내기</p>${mockHomeBtn()}`:`<p class="note" style="margin-top:-8px"><b style="color:var(--ink)">오늘 시험이 다 끝난 후 마지막에 제출 버튼을 누릅니다.</b><br>오늘 본 시험 → 원장님께 제출하기</p>`}${useApi()?diaryCard():""}`+tabs+body+`<button class="ghost" data-act="logout">${useApi()?"로그아웃":"이름 바꾸기"}</button><p class="small muted" style="text-align:center;margin-top:18px">앱 버전 ${BUILD}</p>`;
 }
 
 function vVocabMenu(){
@@ -1070,6 +1243,9 @@ function render(){
   else if(S.view==="today")h=vToday();
   else if(S.view==="review")h=vReview();
   else if(S.view==="diary")h=vDiary();
+  else if(S.view==="mock")h=vMock();
+  else if(S.view==="omr")h=vOmr();
+  else if(S.view==="mockadmin")h=vMockAdmin();
   app.innerHTML=h;
   syncAudio();
 }
@@ -1083,12 +1259,16 @@ function readForm(){
 function goHome(){S.view="home";render();window.scrollTo(0,0)}
 
 app.addEventListener("input",e=>{
+  if(e.target.dataset&&e.target.dataset.mf&&S.mockT.form){const k=e.target.dataset.mf;if(k!=="n"&&k!=="listen")S.mockT.form[k]=e.target.value;return}
+  if(e.target.id==="mf_paste"){S.mockT.paste=e.target.value;return}
   if(e.target.id==="aq"){S.admin.q=e.target.value;const pos=e.target.selectionStart;render();const n=document.getElementById("aq");if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}return}
   if(e.target.id==="ftext"){readForm();const f=S.admin.form;const n=parseFor(f.type,f.text).length;
     const p=document.getElementById("pcount");if(p){p.textContent=n?n+"개 인식됐어요.":"아직 인식된 항목이 없어요.";p.className="small "+(n?"":"muted")}}
 });
 app.addEventListener("change",e=>{
   const act=e.target.dataset.act;
+  if(e.target.dataset&&(e.target.dataset.mf==="n"||e.target.dataset.mf==="listen")&&S.mockT.form){const f=S.mockT.form;
+    if(e.target.dataset.mf==="n")mtResize(f,e.target.value);else f.listen=Math.max(0,Math.min(f.n,Number(e.target.value)||0));render();return}
   if(act==="book"){S.sel[S.tab]=e.target.value;render();loadBook(e.target.value).catch(()=>{})}
   if(act==="ftype"){readForm();S.admin.form.type=e.target.value;S.admin.form.book="";render()}
   if(act==="fbook"){readForm();S.admin.form.book=e.target.value;render()}
@@ -1098,6 +1278,7 @@ app.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&e.target.id==="fl"){e.preventDefault();doFill()}
   if(e.key==="Enter"&&e.target.id==="nm"){e.preventDefault();enter()}
   if(e.key==="Enter"&&e.target.id==="dpin"){e.preventDefault();diaryPinOk()}
+  if(e.key==="Enter"&&e.target.id==="mtpin"){e.preventDefault();mtPinOk()}
   if(e.key==="Enter"&&(e.target.id==="lpw"||e.target.id==="lid")){e.preventDefault();if(e.target.id==="lid"){const p=document.getElementById("lpw");if(p)p.focus()}else doLogin()}
   if((e.key==="Enter"||e.key===" ")&&e.target.dataset&&e.target.dataset.act==="flip"){e.preventDefault();S.cards.flip=!S.cards.flip;render()}
 });
@@ -1137,12 +1318,38 @@ app.addEventListener("click",async e=>{
     case "login":doLogin();break;
     case "pickid":{const x=lsGet("mj_ids",[])[Number(v)];if(x){S.loginId=x;S.loginMsg="";render();const p=document.getElementById("lpw");if(p)p.focus()}break;}
     case "syncnow":sync();break;
+    case "mock":S.view="mock";S.mock.confirm=false;render();window.scrollTo(0,0);mockLoad(true);break;
+    case "omr":{if(!mockFind(v)){toast("모의고사 목록을 불러오는 중이에요");mockLoad(true);return}S.mock.sel=v;S.mock.confirm=false;S.view="omr";render();window.scrollTo(0,0);break;}
+    case "mbub":{const M=S.mock,x=mockFind(M.sel);if(!x||x.done||M.busy)return;const a=mockDraft(x.mid,x.n),q=Number(el.dataset.q),k=Number(v);
+      a[q]=a[q]===k?0:k;lsSet(stuKey("mockans_"+x.mid),a);M.confirm=false;render();break;}
+    case "mockask":S.mock.confirm=true;render();setTimeout(()=>{const p=document.querySelector('[data-act="mocksend"]');if(p)p.scrollIntoView({block:"center"})},30);break;
+    case "mockcancel":S.mock.confirm=false;render();break;
+    case "mocksend":mockSubmit();break;
+    case "mockadmin":S.view="mockadmin";S.mockT.err="";render();window.scrollTo(0,0);if(mtOn()&&!S.mockT.form)mtCall({act:"mock_admin_list"});break;
+    case "mtpinok":mtPinOk();break;
+    case "mtnew":mtNew();S.mockT.err="";render();window.scrollTo(0,0);break;
+    case "mtedit":{const e2=(S.mockT.list||[]).find(x=>x.mid===v);if(e2){mtEdit(e2);S.mockT.err="";render();window.scrollTo(0,0)}break;}
+    case "mtback":S.mockT.form=null;S.mockT.err="";render();window.scrollTo(0,0);if(mtOn())mtCall({act:"mock_admin_list"});break;
+    case "tbub":{const f=S.mockT.form;if(!f)return;const q=Number(el.dataset.q),k=Number(v);f.key[q]=f.key[q]===k?0:k;render();break;}
+    case "t3":{const f=S.mockT.form;if(!f)return;const q=Number(el.dataset.q)+1;f.three=f.three.includes(q)?f.three.filter(x=>x!==q):f.three.concat(q).sort((a,b)=>a-b);render();break;}
+    case "mtpaste":{const f=S.mockT.form;if(!f)return;const C={"①":1,"②":2,"③":3,"④":4,"⑤":5},arr=[];
+      for(const ch of String(S.mockT.paste||""))if(C[ch])arr.push(C[ch]);else if(ch>="1"&&ch<="5")arr.push(Number(ch));
+      if(!arr.length){toast("1~5 숫자로 된 정답을 넣어 주세요");return}
+      if(arr.length!==f.n)mtResize(f,arr.length);f.key=arr.slice(0,f.n);toast(`정답 ${arr.length}개를 채웠어요. 문항 수 ${f.n}`);render();break;}
+    case "mtsave":{const T=S.mockT,f=T.form;if(!f||T.busy)return;
+      const miss=f.key.map((a,i)=>a?0:i+1).filter(Boolean);
+      if(!f.name.trim()){T.err=MT_ERR.name;render();return}
+      if(miss.length){T.err=`안 칠한 정답이 있어요: ${miss.slice(0,15).join(", ")}${miss.length>15?" …":""}번`;render();return}
+      const res=await mtCall({act:"mock_admin_save",orig:f.orig,date:f.date,name:f.name.trim(),target:f.target.trim(),key:f.key,three:f.three,listen:f.listen,memo:f.memo});
+      if(res){T.form=null;toast("저장했어요");render();window.scrollTo(0,0);S.mock.at=0;mockLoad(true)}break;}
+    case "mtdel":{const T=S.mockT,f=T.form;if(!f||!f.orig||T.busy)return;if(!T.delArm){T.delArm=true;render();return}
+      const res=await mtCall({act:"mock_admin_del",orig:f.orig});if(res){T.form=null;toast("지웠어요");render();S.mock.at=0;mockLoad(true)}break;}
     case "diary":{if(!DIARY_ON)return;S.diary.sel=v||null;S.view="diary";render();window.scrollTo(0,0);diaryLoad();break;}
     case "dcheck":{const date=S.diary.sel||diaryToday();if(S.diary.busy)return;diaryCheck(date,el.dataset.k,v||"");break;}
     case "dpinok":diaryPinOk();break;
     case "dpincancel":S.diary.pinOpen=false;S.diary.pend=null;S.diary.pinMsg="";render();break;
     case "ddate":S.diary.sel=v;render();break;
-    case "logout":if(useApi()){try{localStorage.removeItem("mj_me")}catch(err){}S.loginId="";S.loginMsg=""}diaryReset();S.me=null;S.quiz=null;S.result=null;S.cards=null;S.nameEdit=false;S.view="start";render();window.scrollTo(0,0);break;
+    case "logout":if(useApi()){try{localStorage.removeItem("mj_me")}catch(err){}S.loginId="";S.loginMsg=""}diaryReset();mockReset();S.me=null;S.quiz=null;S.result=null;S.cards=null;S.nameEdit=false;S.view="start";render();window.scrollTo(0,0);break;
     case "pickname":{const n=(S.nameList||[])[Number(v)];if(n)enter(n);break;}
     case "nameedit":S.nameEdit=!S.nameEdit;render();break;
     case "namehide":{const n=(S.nameList||[])[Number(v)];if(n){hideName(n);toast(`${n} 이름을 목록에서 뺐어요`)}if(!knownNames().length)S.nameEdit=false;render();break;}
@@ -1268,7 +1475,7 @@ async function boot(){
   else if(me&&me.name){if(!lsGet("mj_names",{})[me.name])rememberName(me.name);
     if(knownNames().length<=1){S.me=me;S.sel=lsGet(stuKey("sel"),{});S.view="home"}}
   render();
-  if(useApi()&&S.me){sync();diaryLoad()}
+  if(useApi()&&S.me){sync();diaryLoad();mockLoad(true)}
   if(window.claude&&window.claude.use){
     window.claude.use("user").then(async u=>{if(!u)return;let ok=false;try{ok=await u.canEdit()}catch(e){}
       if(ok){S.canEdit=true;if(S.view!=="quiz"&&S.view!=="cards")render()}}).catch(()=>{});
